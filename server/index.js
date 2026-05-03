@@ -1,0 +1,34 @@
+require('dotenv').config()
+const express = require('express')
+const cors = require('cors')
+const path = require('path')
+
+const app = express()
+const PORT = process.env.PORT || 3001
+
+app.use(cors({ origin: process.env.CLIENT_ORIGIN || 'http://localhost:3000' }))
+app.use(express.json())
+
+// Routes
+app.use('/api/settings',       require('./routes/settings'))
+app.use('/api/entry/manual',   require('./routes/entry'))
+app.use('/api/sales',          require('./routes/sales'))
+app.use('/api/webhook',        require('./routes/webhooks'))
+app.use('/api/data',           require('./routes/data'))
+app.use('/api/bonus',          require('./routes/bonus'))
+
+// Health check
+app.get('/api/health', (req, res) => {
+  res.json({ status: 'ok', ts: new Date().toISOString() })
+})
+
+// Serve built client in production
+if (process.env.NODE_ENV === 'production') {
+  const clientDist = path.join(__dirname, '..', 'client', 'dist')
+  app.use(express.static(clientDist))
+  app.get('*', (req, res) => res.sendFile(path.join(clientDist, 'index.html')))
+}
+
+app.listen(PORT, () => {
+  console.log(`🍑 Just Peachy server running on http://localhost:${PORT}`)
+})

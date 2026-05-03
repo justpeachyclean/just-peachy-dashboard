@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "just-peachy-client",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["/Users/user/.nvm/versions/node/v20.20.2/bin/npm", "run", "dev"],
+      "port": 3000
+    }
+  ]
+}

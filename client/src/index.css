@@ -1,0 +1,50 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  background-color: #f4f6f9;
+  color: #1a1a2e;
+  font-family: 'Inter', system-ui, sans-serif;
+}
+
+@layer components {
+  .card {
+    @apply bg-white rounded-xl shadow-sm border border-gray-100 p-5;
+  }
+
+  .kpi-card {
+    @apply bg-white rounded-xl shadow-sm border-l-4 p-5;
+  }
+
+  .btn-primary {
+    @apply bg-brand text-white font-semibold px-5 py-2 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+  .btn-primary:hover:not(:disabled) {
+    background-color: #B5394D;
+  }
+
+  .btn-secondary {
+    @apply bg-white text-ink border border-gray-200 font-medium px-5 py-2 rounded-lg hover:bg-gray-50 transition-colors;
+  }
+
+  .form-label {
+    @apply block text-sm font-medium text-gray-700 mb-1;
+  }
+
+  .form-input {
+    @apply w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand/20 focus:border-brand transition-colors;
+  }
+
+  .form-select {
+    @apply w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand/20 focus:border-brand transition-colors bg-white;
+  }
+
+  .tab-active {
+    @apply border-b-2 border-brand text-brand font-semibold;
+  }
+
+  .tab-inactive {
+    @apply text-gray-500 hover:text-gray-700 hover:border-b-2 hover:border-gray-300 font-medium;
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "name": "just-peachy-dashboard",
+  "version": "1.0.0",
+  "scripts": {
+    "build": "cd client && npm install && npm run build",
+    "start": "NODE_ENV=production node server/index.js",
+    "dev:server": "cd server && node index.js",
+    "dev:client": "cd client && npm run dev"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

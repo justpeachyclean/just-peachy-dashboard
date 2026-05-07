@@ -85,6 +85,7 @@ export default function Leads() {
     converted: 'all',
   })
   const [showForm, setShowForm] = useState(false)
+  const [editId, setEditId] = useState(null)
   const [form, setForm] = useState(BLANK_FORM)
   const [saving, setSaving] = useState(false)
   const [pricingSet, setPricingSet] = useState(true)
@@ -110,23 +111,44 @@ export default function Leads() {
   const f = v => (v ?? '').toString()
   const set = k => e => setForm(p => ({ ...p, [k]: e.target.type === 'checkbox' ? e.target.checked : e.target.value }))
 
+  const openEdit = r => {
+    setEditId(r.id)
+    setForm({
+      record_date:        r.record_date || new Date().toISOString().slice(0, 10),
+      rep_name:           r.rep_name || '',
+      client_name:        r.client_name || '',
+      frequency:          r.frequency || '',
+      quote_amount:       r.quote_amount ?? '',
+      price_per_clean:    r.price_per_clean ?? '',
+      converted:          !!r.converted,
+      recurring_retained: !!r.recurring_retained,
+      lead_source:        r.lead_source || '',
+      used_before:        r.used_before || '',
+      reason:             r.reason || '',
+      notes:              r.notes || '',
+    })
+    setShowForm(true)
+  }
+
   const save = async e => {
     e.preventDefault()
     setSaving(true)
-    await fetch('/api/leads', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        ...form,
-        quote_amount: form.quote_amount ? parseFloat(form.quote_amount) : null,
-        price_per_clean: form.price_per_clean ? parseFloat(form.price_per_clean) : null,
-        converted: form.converted ? 1 : 0,
-        recurring_retained: form.recurring_retained ? 1 : 0,
-        source: 'manual',
-      }),
-    })
+    const payload = {
+      ...form,
+      quote_amount:    form.quote_amount    ? parseFloat(form.quote_amount)    : null,
+      price_per_clean: form.price_per_clean ? parseFloat(form.price_per_clean) : null,
+      converted:          form.converted          ? 1 : 0,
+      recurring_retained: form.recurring_retained ? 1 : 0,
+      source: 'manual',
+    }
+    if (editId) {
+      await fetch(`/api/leads/${editId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+    } else {
+      await fetch('/api/leads', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+    }
     setSaving(false)
     setShowForm(false)
+    setEditId(null)
     setForm(BLANK_FORM)
     load()
   }
@@ -172,7 +194,7 @@ export default function Leads() {
           <button onClick={() => exportCsv(exportFilename, visible)} className="btn-secondary text-sm">
             ↓ Full Export
           </button>
-          <button onClick={() => { setForm(BLANK_FORM); setShowForm(true) }} className="btn-primary text-sm">
+          <button onClick={() => { setEditId(null); setForm(BLANK_FORM); setShowForm(true) }} className="btn-primary text-sm">
             + Add Lead
           </button>
         </div>
@@ -251,11 +273,11 @@ export default function Leads() {
               <tr>
                 <td colSpan={10} className="text-center py-12 text-gray-400 text-sm">
                   No leads for {monthLabel}.{' '}
-                  <button onClick={() => { setForm(BLANK_FORM); setShowForm(true) }} className="text-brand underline">Add one →</button>
+                  <button onClick={() => { setEditId(null); setForm(BLANK_FORM); setShowForm(true) }} className="text-brand underline">Add one →</button>
                 </td>
               </tr>
             ) : visible.map(r => (
-              <tr key={r.id} className={`border-b border-gray-50 hover:bg-gray-50/40 ${r.converted ? '' : 'opacity-60'}`}>
+              <tr key={r.id} className={`border-b border-gray-50 hover:bg-gray-50/40 cursor-pointer ${r.converted ? '' : 'opacity-60'}`} onClick={() => openEdit(r)}>
                 <td className="py-2 pr-2 text-gray-500 whitespace-nowrap text-xs">{r.record_date}</td>
                 <td className="py-2 px-2 text-gray-500 text-xs">{r.rep_name || '—'}</td>
                 <td className="py-2 px-2 font-medium text-ink">{r.client_name || <span className="text-gray-300">—</span>}</td>
@@ -275,7 +297,7 @@ export default function Leads() {
                     : <span className="text-xs text-gray-300">N</span>}
                 </td>
                 <td className="py-2 px-2 text-gray-400 text-xs">{r.lead_source || '—'}</td>
-                <td className="py-2 pl-2">
+                <td className="py-2 pl-2" onClick={e => e.stopPropagation()}>
                   <button onClick={() => del(r.id)} className="text-gray-200 hover:text-danger text-xs transition-colors">✕</button>
                 </td>
               </tr>
@@ -289,7 +311,7 @@ export default function Leads() {
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4 overflow-y-auto">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md my-4">
             <div className="flex items-center justify-between p-5 border-b border-gray-100">
-              <h3 className="font-semibold text-ink">Add Lead</h3>
+              <h3 className="font-semibold text-ink">{editId ? 'Edit Lead' : 'Add Lead'}</h3>
               <button onClick={() => setShowForm(false)} className="text-gray-400 hover:text-gray-600 text-2xl leading-none">&times;</button>
             </div>
             <form onSubmit={save} className="p-5 space-y-3">

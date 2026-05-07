@@ -104,6 +104,55 @@ router.post('/', (req, res) => {
   res.json({ ok: true })
 })
 
+// PATCH /api/leads/:id  — update existing record (also usable by Zapier via external_id)
+router.patch('/:id', (req, res) => {
+  // Allow lookup by external_id (GHL opportunity ID) or numeric id
+  const byExternal = isNaN(req.params.id)
+  const existing = byExternal
+    ? db.prepare('SELECT * FROM lead_records WHERE external_id = ?').get(req.params.id)
+    : db.prepare('SELECT * FROM lead_records WHERE id = ?').get(req.params.id)
+  if (!existing) return res.status(404).json({ error: 'Not found' })
+
+  const {
+    record_date, client_name, frequency, price_per_clean, quote_amount,
+    converted, recurring_retained, lead_source, used_before, reason,
+    rep_name, notes,
+  } = req.body
+
+  const updated = {
+    record_date:        record_date        ?? existing.record_date,
+    client_name:        client_name        !== undefined ? client_name        : existing.client_name,
+    frequency:          frequency          !== undefined ? frequency          : existing.frequency,
+    price_per_clean:    price_per_clean    !== undefined ? price_per_clean    : existing.price_per_clean,
+    quote_amount:       quote_amount       !== undefined ? quote_amount       : existing.quote_amount,
+    converted:          converted          !== undefined ? (converted ? 1 : 0) : existing.converted,
+    recurring_retained: recurring_retained !== undefined ? (recurring_retained ? 1 : 0) : existing.recurring_retained,
+    lead_source:        lead_source        !== undefined ? lead_source        : existing.lead_source,
+    used_before:        used_before        !== undefined ? used_before        : existing.used_before,
+    reason:             reason             !== undefined ? reason             : existing.reason,
+    rep_name:           rep_name           !== undefined ? rep_name           : existing.rep_name,
+    notes:              notes              !== undefined ? notes              : existing.notes,
+    month:              (record_date ?? existing.record_date).slice(0, 7),
+  }
+
+  db.prepare(`
+    UPDATE lead_records SET
+      record_date=?, client_name=?, frequency=?, price_per_clean=?, quote_amount=?,
+      converted=?, recurring_retained=?, lead_source=?, used_before=?, reason=?,
+      rep_name=?, notes=?, month=?
+    WHERE id=?
+  `).run(
+    updated.record_date, updated.client_name, updated.frequency,
+    updated.price_per_clean, updated.quote_amount,
+    updated.converted, updated.recurring_retained,
+    updated.lead_source, updated.used_before, updated.reason,
+    updated.rep_name, updated.notes, updated.month,
+    existing.id
+  )
+
+  res.json({ ok: true })
+})
+
 // DELETE /api/leads/:id
 router.delete('/:id', (req, res) => {
   db.prepare('DELETE FROM lead_records WHERE id = ?').run(req.params.id)

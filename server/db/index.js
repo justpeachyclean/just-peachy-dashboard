@@ -39,6 +39,12 @@ const migrations = [
   )`,
   `INSERT OR IGNORE INTO settings (key, value) VALUES ('avg_recurring_price', NULL)`,
   `INSERT OR IGNORE INTO settings (key, value) VALUES ('avg_onetime_price', NULL)`,
+  `ALTER TABLE lead_records ADD COLUMN quote_amount REAL`,
+  `ALTER TABLE lead_records ADD COLUMN converted INTEGER DEFAULT 0`,
+  `ALTER TABLE lead_records ADD COLUMN recurring_retained INTEGER DEFAULT 0`,
+  `ALTER TABLE lead_records ADD COLUMN lead_source TEXT`,
+  `ALTER TABLE lead_records ADD COLUMN used_before TEXT`,
+  `ALTER TABLE lead_records ADD COLUMN reason TEXT`,
 ]
 for (const sql of migrations) {
   try { db.exec(sql) } catch (_) { /* column already exists — safe to ignore */ }

@@ -1,51 +1,60 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 
 const FREQ_LABELS = {
-  weekly:        'Weekly',
-  biweekly:      'Biweekly',
-  'bi-weekly':   'Biweekly',
-  monthly:       'Monthly',
-  'tri-weekly':  'Tri-Weekly',
-  'every 4 weeks': 'Every 4 Wks',
-  one_time:      'One-Time',
-  'one time':    'One-Time',
-  'one-time':    'One-Time',
+  weekly:           'Weekly',
+  biweekly:         'Biweekly',
+  'bi-weekly':      'Biweekly',
+  monthly:          'Monthly',
+  'tri-weekly':     'Tri-Weekly',
+  'every 4 weeks':  'Every 4 Wks',
+  one_time:         'One-Time',
+  'one time':       'One-Time',
+  'one-time':       'One-Time',
 }
-
 const FREQ_COLORS = {
-  weekly:        'bg-brand/10 text-brand',
-  biweekly:      'bg-ok/10 text-ok',
-  'bi-weekly':   'bg-ok/10 text-ok',
-  monthly:       'bg-peach/20 text-amber-700',
-  'tri-weekly':  'bg-purple-50 text-purple-700',
-  'every 4 weeks': 'bg-peach/20 text-amber-700',
-  one_time:      'bg-gray-100 text-gray-500',
-  'one time':    'bg-gray-100 text-gray-500',
-  'one-time':    'bg-gray-100 text-gray-500',
+  weekly:           'bg-brand/10 text-brand',
+  biweekly:         'bg-ok/10 text-ok',
+  'bi-weekly':      'bg-ok/10 text-ok',
+  monthly:          'bg-peach/20 text-amber-700',
+  'tri-weekly':     'bg-purple-50 text-purple-700',
+  'every 4 weeks':  'bg-peach/20 text-amber-700',
+  one_time:         'bg-gray-100 text-gray-500',
+  'one time':       'bg-gray-100 text-gray-500',
+  'one-time':       'bg-gray-100 text-gray-500',
 }
-
-const fmt$ = n => n != null ? `$${Number(n).toLocaleString(undefined, { maximumFractionDigits: 0 })}` : '—'
+const FREQUENCIES = ['weekly', 'biweekly', 'monthly', 'tri-weekly', 'every 4 weeks', 'one_time']
 const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+const fmt$ = n => n != null ? `$${Number(n).toLocaleString(undefined, { maximumFractionDigits: 0 })}` : '—'
 
 function FreqBadge({ freq }) {
   if (!freq) return <span className="text-gray-300 text-xs">—</span>
   const key = freq.toLowerCase().trim()
-  const label = FREQ_LABELS[key] || freq
-  const color = FREQ_COLORS[key] || 'bg-gray-100 text-gray-500'
-  return <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${color}`}>{label}</span>
+  return (
+    <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${FREQ_COLORS[key] || 'bg-gray-100 text-gray-500'}`}>
+      {FREQ_LABELS[key] || freq}
+    </span>
+  )
 }
 
 function exportCsv(filename, rows) {
-  const headers = ['Date', 'Client Name', 'Frequency', 'Price/Clean', 'Annual Value', 'Rep']
-  const lines = [headers.join(','), ...rows.map(r => [
-    r.record_date,
-    `"${(r.client_name || '').replace(/"/g, '""')}"`,
-    r.frequency || '',
-    r.price_per_clean != null ? r.price_per_clean : '',
-    r.annual_value != null ? r.annual_value : '',
-    `"${(r.rep_name || '').replace(/"/g, '""')}"`,
-  ].join(','))]
+  const headers = ['Date', 'Rep', 'Client Name', 'Frequency', 'Quote', 'Annual Value', 'Converted', 'Recurring', 'Lead Source', 'Reason']
+  const escape = v => `"${String(v ?? '').replace(/"/g, '""')}"`
+  const lines = [
+    headers.join(','),
+    ...rows.map(r => [
+      r.record_date,
+      escape(r.rep_name),
+      escape(r.client_name),
+      r.frequency || '',
+      r.quote_amount != null ? r.quote_amount : '',
+      r.annual_value != null ? r.annual_value : '',
+      r.converted ? 'Y' : 'N',
+      r.recurring_retained ? 'Y' : 'N',
+      escape(r.lead_source),
+      escape(r.reason),
+    ].join(','))
+  ]
   const blob = new Blob([lines.join('\n')], { type: 'text/csv' })
   const a = document.createElement('a')
   a.href = URL.createObjectURL(blob)
@@ -53,28 +62,42 @@ function exportCsv(filename, rows) {
   a.click()
 }
 
-const FREQUENCIES = ['weekly', 'biweekly', 'monthly', 'tri-weekly', 'every 4 weeks', 'one_time']
-const currentYM = () => {
-  const d = new Date()
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+const BLANK_FORM = {
+  record_date: new Date().toISOString().slice(0, 10),
+  rep_name: 'Lexi',
+  client_name: '',
+  frequency: '',
+  quote_amount: '',
+  price_per_clean: '',
+  converted: false,
+  recurring_retained: false,
+  lead_source: '',
+  used_before: '',
+  reason: '',
+  notes: '',
 }
 
 export default function Leads() {
   const [leads, setLeads] = useState([])
-  const [filter, setFilter] = useState({ year: String(new Date().getFullYear()), month: '' })
+  const [filter, setFilter] = useState({
+    year: String(new Date().getFullYear()),
+    month: String(new Date().getMonth() + 1).padStart(2, '0'),
+    converted: 'all',
+  })
   const [showForm, setShowForm] = useState(false)
-  const [form, setForm] = useState({ record_date: new Date().toISOString().slice(0, 10), client_name: '', frequency: 'biweekly', price_per_clean: '', rep_name: '', notes: '' })
+  const [form, setForm] = useState(BLANK_FORM)
   const [saving, setSaving] = useState(false)
   const [pricingSet, setPricingSet] = useState(true)
 
   const load = () => {
-    const params = new URLSearchParams({ year: filter.year, limit: 1000 })
+    const params = new URLSearchParams({ year: filter.year, limit: 2000 })
     if (filter.month) params.set('month', `${filter.year}-${filter.month}`)
     fetch(`/api/leads?${params}`)
       .then(r => r.json())
       .then(data => {
         setLeads(data)
-        if (data.length > 0 && data.some(r => r.annual_value == null && r.frequency !== 'one_time')) {
+        if (data.some(r => r.converted && r.annual_value == null && r.frequency &&
+            !['one_time','one time','one-time'].includes(r.frequency.toLowerCase()))) {
           setPricingSet(false)
         } else {
           setPricingSet(true)
@@ -82,7 +105,10 @@ export default function Leads() {
       })
   }
 
-  useEffect(() => { load() }, [filter])
+  useEffect(() => { load() }, [filter.year, filter.month])
+
+  const f = v => (v ?? '').toString()
+  const set = k => e => setForm(p => ({ ...p, [k]: e.target.type === 'checkbox' ? e.target.checked : e.target.value }))
 
   const save = async e => {
     e.preventDefault()
@@ -90,11 +116,18 @@ export default function Leads() {
     await fetch('/api/leads', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...form, price_per_clean: form.price_per_clean ? parseFloat(form.price_per_clean) : null, source: 'manual' }),
+      body: JSON.stringify({
+        ...form,
+        quote_amount: form.quote_amount ? parseFloat(form.quote_amount) : null,
+        price_per_clean: form.price_per_clean ? parseFloat(form.price_per_clean) : null,
+        converted: form.converted ? 1 : 0,
+        recurring_retained: form.recurring_retained ? 1 : 0,
+        source: 'manual',
+      }),
     })
     setSaving(false)
     setShowForm(false)
-    setForm({ record_date: new Date().toISOString().slice(0, 10), client_name: '', frequency: 'biweekly', price_per_clean: '', rep_name: '', notes: '' })
+    setForm(BLANK_FORM)
     load()
   }
 
@@ -104,31 +137,44 @@ export default function Leads() {
     load()
   }
 
-  const totalAnnual = leads.reduce((s, r) => s + (r.annual_value || 0), 0)
-  const recurring = leads.filter(r => !['one_time','one time','one-time'].includes((r.frequency || '').toLowerCase()))
-  const oneTime = leads.filter(r => ['one_time','one time','one-time'].includes((r.frequency || '').toLowerCase()))
+  // Apply converted filter
+  const visible = leads.filter(r => {
+    if (filter.converted === 'yes') return r.converted
+    if (filter.converted === 'no') return !r.converted
+    return true
+  })
+
+  const converted = leads.filter(r => r.converted)
+  const recurring = converted.filter(r => r.recurring_retained)
+  const totalAnnual = recurring.reduce((s, r) => s + (r.annual_value || 0), 0)
+  const closeRate = leads.length > 0 ? converted.length / leads.length : null
 
   const monthLabel = filter.month
     ? `${MONTH_NAMES[parseInt(filter.month) - 1]} ${filter.year}`
     : filter.year
 
-  const exportFilename = `jpc-leads-${filter.month ? `${filter.year}-${filter.month}` : filter.year}.csv`
+  // Agency export: converted recurring only
+  const agencyRows = leads.filter(r => r.converted && r.recurring_retained)
+  const exportFilename = `jpc-client-log-${filter.month ? `${filter.year}-${filter.month}` : filter.year}.csv`
+  const agencyFilename = `jpc-agency-recurring-${filter.month ? `${filter.year}-${filter.month}` : filter.year}.csv`
 
   return (
     <div>
       <div className="flex items-start justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold text-ink">Client Log</h1>
-          <p className="text-sm text-gray-500 mt-0.5">Closed sales — frequency &amp; annual value</p>
+          <p className="text-sm text-gray-500 mt-0.5">Lead tracking — {monthLabel}</p>
         </div>
-        <div className="flex gap-2">
-          <button
-            onClick={() => exportCsv(exportFilename, leads)}
-            className="btn-secondary text-sm"
-          >
-            ↓ Export for Agency
+        <div className="flex gap-2 flex-wrap justify-end">
+          <button onClick={() => exportCsv(agencyFilename, agencyRows)} className="btn-secondary text-sm">
+            ↓ Agency Export
           </button>
-          <button onClick={() => setShowForm(true)} className="btn-primary text-sm">+ Add Record</button>
+          <button onClick={() => exportCsv(exportFilename, visible)} className="btn-secondary text-sm">
+            ↓ Full Export
+          </button>
+          <button onClick={() => { setForm(BLANK_FORM); setShowForm(true) }} className="btn-primary text-sm">
+            + Add Lead
+          </button>
         </div>
       </div>
 
@@ -136,99 +182,100 @@ export default function Leads() {
         <div className="flex items-start gap-2 bg-warn/5 border border-warn/20 rounded-xl px-4 py-3 text-xs text-gray-500 mb-5">
           <span className="text-warn mt-0.5">⚠</span>
           <span>
-            Annual values are incomplete — set avg clean prices in{' '}
-            <Link to="/settings" className="text-brand underline">Settings → Client Pricing</Link>.
+            Annual values need avg clean prices —{' '}
+            <Link to="/settings" className="text-brand underline">Settings → Client Pricing</Link>
           </span>
         </div>
       )}
 
-      {/* Filters */}
-      <div className="flex items-center gap-3 mb-5">
-        <select
-          className="form-input w-28 text-sm"
-          value={filter.year}
-          onChange={e => setFilter(f => ({ ...f, year: e.target.value, month: '' }))}
-        >
-          {['2026','2025','2024'].map(y => <option key={y}>{y}</option>)}
-        </select>
-        <select
-          className="form-input w-36 text-sm"
-          value={filter.month}
-          onChange={e => setFilter(f => ({ ...f, month: e.target.value }))}
-        >
-          <option value="">All months</option>
-          {MONTH_NAMES.map((m, i) => (
-            <option key={i} value={String(i + 1).padStart(2, '0')}>{m}</option>
-          ))}
-        </select>
-        <span className="text-sm text-gray-400">{leads.length} records</span>
+      {/* Summary row */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-5">
+        <div className="kpi-card border-gray-200">
+          <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Leads In</p>
+          <p className="text-3xl font-bold text-ink mt-2">{leads.length}</p>
+        </div>
+        <div className="kpi-card border-ok">
+          <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Converted</p>
+          <p className="text-3xl font-bold text-ok mt-2">{converted.length}</p>
+          <p className="text-xs text-gray-400 mt-1">
+            {closeRate != null ? `${(closeRate * 100).toFixed(1)}% close rate` : ''}
+          </p>
+        </div>
+        <div className="kpi-card border-brand">
+          <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Recurring Retained</p>
+          <p className="text-3xl font-bold text-brand mt-2">{recurring.length}</p>
+        </div>
+        <div className="kpi-card border-peach">
+          <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Est. Annual Value</p>
+          <p className="text-3xl font-bold text-ink mt-2">{totalAnnual > 0 ? fmt$(totalAnnual) : '—'}</p>
+          <p className="text-xs text-gray-400 mt-1">recurring only</p>
+        </div>
       </div>
 
-      {/* Summary cards */}
-      {leads.length > 0 && (
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-5">
-          <div className="kpi-card border-brand">
-            <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Total Closes</p>
-            <p className="text-3xl font-bold text-ink mt-2">{leads.length}</p>
-            <p className="text-xs text-gray-400 mt-1">{recurring.length} recurring · {oneTime.length} one-time</p>
-          </div>
-          <div className="kpi-card border-peach">
-            <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Est. Annual Value</p>
-            <p className="text-3xl font-bold text-ink mt-2">{fmt$(totalAnnual || null)}</p>
-            <p className="text-xs text-gray-400 mt-1">recurring clients only</p>
-          </div>
-          <div className="kpi-card border-ok">
-            <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Weekly / Biweekly</p>
-            <p className="text-3xl font-bold text-ok mt-2">
-              {leads.filter(r => ['weekly','biweekly','bi-weekly'].includes((r.frequency||'').toLowerCase())).length}
-            </p>
-            <p className="text-xs text-gray-400 mt-1">highest-value frequency</p>
-          </div>
-          <div className="kpi-card border-gray-200">
-            <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Avg Annual Value</p>
-            <p className="text-3xl font-bold text-ink mt-2">
-              {recurring.length > 0 && totalAnnual ? fmt$(Math.round(totalAnnual / recurring.length)) : '—'}
-            </p>
-            <p className="text-xs text-gray-400 mt-1">per recurring client</p>
-          </div>
-        </div>
-      )}
+      {/* Filters */}
+      <div className="flex items-center gap-3 mb-4 flex-wrap">
+        <select className="form-input w-24 text-sm" value={filter.year} onChange={e => setFilter(f => ({ ...f, year: e.target.value }))}>
+          {['2026','2025','2024'].map(y => <option key={y}>{y}</option>)}
+        </select>
+        <select className="form-input w-36 text-sm" value={filter.month} onChange={e => setFilter(f => ({ ...f, month: e.target.value }))}>
+          <option value="">All months</option>
+          {MONTH_NAMES.map((m, i) => <option key={i} value={String(i+1).padStart(2,'0')}>{m}</option>)}
+        </select>
+        <select className="form-input w-36 text-sm" value={filter.converted} onChange={e => setFilter(f => ({ ...f, converted: e.target.value }))}>
+          <option value="all">All leads</option>
+          <option value="yes">Converted only</option>
+          <option value="no">Not converted</option>
+        </select>
+        <span className="text-sm text-gray-400">{visible.length} records</span>
+      </div>
 
       {/* Table */}
       <div className="card overflow-x-auto">
-        <table className="w-full text-sm min-w-[560px]">
+        <table className="w-full text-sm min-w-[800px]">
           <thead>
             <tr className="text-xs text-gray-400 uppercase border-b border-gray-100">
-              <th className="text-left py-2 pr-3 font-medium">Date</th>
+              <th className="text-left py-2 pr-2 font-medium">Date</th>
+              <th className="text-left py-2 px-2 font-medium">Rep</th>
               <th className="text-left py-2 px-2 font-medium">Client</th>
               <th className="text-center py-2 px-2 font-medium">Frequency</th>
-              <th className="text-right py-2 px-2 font-medium">Price/Clean</th>
-              <th className="text-right py-2 px-2 font-medium">Annual Value</th>
-              <th className="text-left py-2 px-2 font-medium">Rep</th>
+              <th className="text-right py-2 px-2 font-medium">Quote</th>
+              <th className="text-right py-2 px-2 font-medium">Annual Val.</th>
+              <th className="text-center py-2 px-2 font-medium">Conv?</th>
+              <th className="text-center py-2 px-2 font-medium">Recurring?</th>
+              <th className="text-left py-2 px-2 font-medium">Source</th>
               <th className="py-2 pl-2"></th>
             </tr>
           </thead>
           <tbody>
-            {leads.length === 0 ? (
+            {visible.length === 0 ? (
               <tr>
-                <td colSpan={7} className="text-center py-12 text-gray-400 text-sm">
-                  No records for {monthLabel}.{' '}
-                  <button onClick={() => setShowForm(true)} className="text-brand underline">Add one →</button>
+                <td colSpan={10} className="text-center py-12 text-gray-400 text-sm">
+                  No leads for {monthLabel}.{' '}
+                  <button onClick={() => { setForm(BLANK_FORM); setShowForm(true) }} className="text-brand underline">Add one →</button>
                 </td>
               </tr>
-            ) : leads.map(r => (
-              <tr key={r.id} className="border-b border-gray-50 hover:bg-gray-50/40">
-                <td className="py-2.5 pr-3 text-gray-500 whitespace-nowrap">{r.record_date}</td>
-                <td className="py-2.5 px-2 font-medium text-ink">{r.client_name || <span className="text-gray-300">—</span>}</td>
-                <td className="py-2.5 px-2 text-center"><FreqBadge freq={r.frequency} /></td>
-                <td className="py-2.5 px-2 text-right text-gray-600">
-                  {r.price_per_clean != null ? fmt$(r.price_per_clean) : <span className="text-gray-300">avg</span>}
-                </td>
-                <td className="py-2.5 px-2 text-right font-semibold">
+            ) : visible.map(r => (
+              <tr key={r.id} className={`border-b border-gray-50 hover:bg-gray-50/40 ${r.converted ? '' : 'opacity-60'}`}>
+                <td className="py-2 pr-2 text-gray-500 whitespace-nowrap text-xs">{r.record_date}</td>
+                <td className="py-2 px-2 text-gray-500 text-xs">{r.rep_name || '—'}</td>
+                <td className="py-2 px-2 font-medium text-ink">{r.client_name || <span className="text-gray-300">—</span>}</td>
+                <td className="py-2 px-2 text-center"><FreqBadge freq={r.frequency} /></td>
+                <td className="py-2 px-2 text-right text-gray-600 text-xs">{r.quote_amount != null ? fmt$(r.quote_amount) : '—'}</td>
+                <td className="py-2 px-2 text-right font-semibold text-xs">
                   {r.annual_value != null ? <span className="text-ink">{fmt$(r.annual_value)}</span> : <span className="text-gray-300">—</span>}
                 </td>
-                <td className="py-2.5 px-2 text-gray-500">{r.rep_name || <span className="text-gray-300">—</span>}</td>
-                <td className="py-2.5 pl-2">
+                <td className="py-2 px-2 text-center">
+                  {r.converted
+                    ? <span className="text-xs font-bold text-ok">Y</span>
+                    : <span className="text-xs text-gray-300">N</span>}
+                </td>
+                <td className="py-2 px-2 text-center">
+                  {r.recurring_retained
+                    ? <span className="text-xs font-bold text-brand">Y</span>
+                    : <span className="text-xs text-gray-300">N</span>}
+                </td>
+                <td className="py-2 px-2 text-gray-400 text-xs">{r.lead_source || '—'}</td>
+                <td className="py-2 pl-2">
                   <button onClick={() => del(r.id)} className="text-gray-200 hover:text-danger text-xs transition-colors">✕</button>
                 </td>
               </tr>
@@ -237,36 +284,75 @@ export default function Leads() {
         </table>
       </div>
 
-      {/* Add record modal */}
+      {/* Add lead modal */}
       {showForm && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm">
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4 overflow-y-auto">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md my-4">
             <div className="flex items-center justify-between p-5 border-b border-gray-100">
-              <h3 className="font-semibold text-ink">Add Closed Sale</h3>
+              <h3 className="font-semibold text-ink">Add Lead</h3>
               <button onClick={() => setShowForm(false)} className="text-gray-400 hover:text-gray-600 text-2xl leading-none">&times;</button>
             </div>
             <form onSubmit={save} className="p-5 space-y-3">
-              <div>
-                <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Date</label>
-                <input type="date" required className="form-input" value={form.record_date} onChange={e => setForm(p => ({ ...p, record_date: e.target.value }))} />
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Date</label>
+                  <input type="date" required className="form-input" value={f(form.record_date)} onChange={set('record_date')} />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Sales Rep</label>
+                  <input type="text" className="form-input" value={f(form.rep_name)} onChange={set('rep_name')} />
+                </div>
               </div>
               <div>
                 <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Client Name</label>
-                <input type="text" className="form-input" value={form.client_name} onChange={e => setForm(p => ({ ...p, client_name: e.target.value }))} />
+                <input type="text" className="form-input" value={f(form.client_name)} onChange={set('client_name')} />
               </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Frequency</label>
-                <select className="form-input" value={form.frequency} onChange={e => setForm(p => ({ ...p, frequency: e.target.value }))}>
-                  {FREQUENCIES.map(f => <option key={f} value={f}>{FREQ_LABELS[f] || f}</option>)}
-                </select>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Frequency / Service</label>
+                  <select className="form-input" value={f(form.frequency)} onChange={set('frequency')}>
+                    <option value="">— select —</option>
+                    {FREQUENCIES.map(f => <option key={f} value={f}>{FREQ_LABELS[f] || f}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Estimate Given ($)</label>
+                  <input type="number" min="0" step="0.01" className="form-input" placeholder="e.g. 185" value={f(form.quote_amount)} onChange={set('quote_amount')} />
+                </div>
               </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Price per Clean (optional — uses avg if blank)</label>
-                <input type="number" min="0" step="0.01" className="form-input" placeholder="leave blank for avg" value={form.price_per_clean} onChange={e => setForm(p => ({ ...p, price_per_clean: e.target.value }))} />
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Lead Source</label>
+                  <input type="text" className="form-input" placeholder="e.g. Inbound Call" value={f(form.lead_source)} onChange={set('lead_source')} />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Used Service Before?</label>
+                  <select className="form-input" value={f(form.used_before)} onChange={set('used_before')}>
+                    <option value="">—</option>
+                    <option value="Yes">Yes</option>
+                    <option value="No">No</option>
+                  </select>
+                </div>
               </div>
+              <div className="flex gap-6 pt-1">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input type="checkbox" checked={!!form.converted} onChange={set('converted')} className="w-4 h-4 accent-ok" />
+                  <span className="text-sm text-gray-700">Converted</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input type="checkbox" checked={!!form.recurring_retained} onChange={set('recurring_retained')} className="w-4 h-4 accent-brand" />
+                  <span className="text-sm text-gray-700">Recurring Retained</span>
+                </label>
+              </div>
+              {!form.converted && (
+                <div>
+                  <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Reason Not Converted</label>
+                  <input type="text" className="form-input" value={f(form.reason)} onChange={set('reason')} />
+                </div>
+              )}
               <div>
-                <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Rep Name</label>
-                <input type="text" className="form-input" value={form.rep_name} onChange={e => setForm(p => ({ ...p, rep_name: e.target.value }))} />
+                <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Notes</label>
+                <input type="text" className="form-input" value={f(form.notes)} onChange={set('notes')} />
               </div>
               <div className="flex gap-3 justify-end pt-2">
                 <button type="button" onClick={() => setShowForm(false)} className="text-sm text-gray-500 hover:text-gray-700 px-4 py-2">Cancel</button>

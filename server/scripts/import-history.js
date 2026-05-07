@@ -50,25 +50,30 @@ function xlDate(v) {
   return d.toISOString().slice(0, 10)
 }
 
-// ─── CLIENT LOG SHEETS (leads/close/recurring by month) ───────────────────────
+// ─── CLIENT LOG SHEETS (leads/close/recurring by month + individual records) ───
 async function importLeadSheets(wb) {
   console.log('\n── Lead/Client Log Sheets ──')
 
-  // Sheet name → month code
   const SHEETS = {
-    'January 2026 Leads':  '2026-01',
-    'February 2026 Leads': '2026-02',
+    'January 2026 Leads':    '2026-01',
+    'February 2026 Leads':   '2026-02',
     'Client log March 2026': '2026-03',
     'Client Log April 2026': '2026-04',
     'Client Log May 2026 ':  '2026-05',
   }
+
+  // Col indices (row 3 is the header row)
+  // 0=date, 1=rep, 2=client_name, 3=notes, 4=used_before, 5=frequency,
+  // 6=lead_source, 7=live_answer, 8=quote_amount, 9=contact_made,
+  // 10=converted, 11=recurring_retained, 12=reason
+  const yesVal = v => { const s = v ? String(v).toLowerCase().trim() : ''; return s === 'y' || s === 'yes' }
 
   for (const [sn, month] of Object.entries(SHEETS)) {
     const sheet = wb.Sheets[sn]
     if (!sheet) { console.log(`  ✗ ${month}: sheet not found`); continue }
 
     const rows = xlsx.utils.sheet_to_json(sheet, { header: 1, defval: null })
-    let leads = 0, quoted = 0, converted = 0, recurring = 0
+    let leads = 0, quoted = 0, converted = 0, recurring = 0, saved = 0
 
     for (let i = 4; i < rows.length; i++) {
       const r = rows[i]
@@ -80,23 +85,45 @@ async function importLeadSheets(wb) {
         date.toLowerCase().includes('highlight') ||
         date.toLowerCase().includes('instructions')
       )) continue
+
+      const recordDate = typeof date === 'number' ? xlDate(date) : String(date).slice(0, 10)
+      if (!recordDate) continue
+
       leads++
-      if (r[8] != null && r[8] !== '') quoted++
-      const conv = r[10] ? String(r[10]).toLowerCase().trim() : ''
-      if (conv === 'y' || conv === 'yes') converted++
-      const rec = r[11] ? String(r[11]).toLowerCase().trim() : ''
-      if (rec === 'y' || rec === 'yes') recurring++
+      const hasQuote = r[8] != null && r[8] !== ''
+      if (hasQuote) quoted++
+      const isConverted = yesVal(r[10])
+      if (isConverted) converted++
+      const isRecurring = yesVal(r[11])
+      if (isRecurring) recurring++
+
+      const freq = r[5] ? String(r[5]).toLowerCase().trim() : (isRecurring ? 'recurring' : isConverted ? 'one_time' : '')
+
+      try {
+        await post('/api/leads', {
+          record_date: recordDate,
+          rep_name: r[1] ? String(r[1]).trim() : null,
+          client_name: r[2] ? String(r[2]).trim() : null,
+          notes: r[3] ? String(r[3]).trim() : null,
+          used_before: r[4] ? String(r[4]).trim() : null,
+          frequency: freq || null,
+          lead_source: r[6] ? String(r[6]).trim() : null,
+          quote_amount: typeof r[8] === 'number' ? r[8] : null,
+          converted: isConverted ? 1 : 0,
+          recurring_retained: isRecurring ? 1 : 0,
+          reason: r[12] ? String(r[12]).trim() : null,
+          source: 'import',
+          external_id: `clientlog-${month}-${i}`,
+        })
+        saved++
+      } catch (e) {
+        if (!e.message?.includes('UNIQUE')) console.error(`    ✗ row ${i}:`, e.message)
+      }
     }
 
     try {
-      await post('/api/sales', {
-        month,
-        leads_in: leads,
-        leads_quoted: quoted,
-        leads_closed: converted,
-        recurring_closed: recurring,
-      })
-      console.log(`  ✓ ${month}  leads=${leads}  quoted=${quoted}  closed=${converted}  recurring=${recurring}`)
+      await post('/api/sales', { month, leads_in: leads, leads_quoted: quoted, leads_closed: converted, recurring_closed: recurring })
+      console.log(`  ✓ ${month}  leads=${leads}  quoted=${quoted}  closed=${converted}  recurring=${recurring}  (${saved} records saved)`)
     } catch (e) {
       console.error(`  ✗ ${month}:`, e.message)
     }

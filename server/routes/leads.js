@@ -56,6 +56,12 @@ router.post('/', (req, res) => {
     client_name,
     frequency,
     price_per_clean,
+    quote_amount,
+    converted = 0,
+    recurring_retained = 0,
+    lead_source,
+    used_before,
+    reason,
     rep_name,
     source = 'manual',
     external_id,
@@ -68,21 +74,31 @@ router.post('/', (req, res) => {
 
   db.prepare(`
     INSERT INTO lead_records
-      (record_date, client_name, frequency, price_per_clean, rep_name, month, source, external_id, notes)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      (record_date, client_name, frequency, price_per_clean, quote_amount,
+       converted, recurring_retained, lead_source, used_before, reason,
+       rep_name, month, source, external_id, notes)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     ON CONFLICT(external_id) DO UPDATE SET
-      record_date     = excluded.record_date,
-      client_name     = excluded.client_name,
-      frequency       = excluded.frequency,
-      price_per_clean = excluded.price_per_clean,
-      rep_name        = excluded.rep_name,
-      month           = excluded.month,
-      source          = excluded.source,
-      notes           = excluded.notes
+      record_date        = excluded.record_date,
+      client_name        = excluded.client_name,
+      frequency          = excluded.frequency,
+      price_per_clean    = excluded.price_per_clean,
+      quote_amount       = excluded.quote_amount,
+      converted          = excluded.converted,
+      recurring_retained = excluded.recurring_retained,
+      lead_source        = excluded.lead_source,
+      used_before        = excluded.used_before,
+      reason             = excluded.reason,
+      rep_name           = excluded.rep_name,
+      month              = excluded.month,
+      source             = excluded.source,
+      notes              = excluded.notes
   `).run(
     record_date, client_name ?? null, frequency ?? null,
-    price_per_clean ?? null, rep_name ?? null,
-    month, source, external_id ?? null, notes ?? null
+    price_per_clean ?? null, quote_amount ?? null,
+    converted ? 1 : 0, recurring_retained ? 1 : 0,
+    lead_source ?? null, used_before ?? null, reason ?? null,
+    rep_name ?? null, month, source, external_id ?? null, notes ?? null
   )
 
   res.json({ ok: true })

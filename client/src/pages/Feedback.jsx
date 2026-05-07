@@ -64,7 +64,7 @@ export default function Feedback() {
   )
 
   const maxCount = Math.max(1, ...monthly.map(m => m.count))
-  const years = [year - 1, year, year + 1]
+  const years = Array.from({ length: 5 }, (_, i) => year - 2 + i)
 
   // Distribution
   const dist = [5,4,3,2,1].map(star => ({
@@ -100,16 +100,6 @@ export default function Feedback() {
         </div>
       )}
 
-      {/* Zap connect callout */}
-      {stats.total === 0 && (
-        <div className="card mb-5 bg-blue-50 border-blue-100">
-          <p className="text-sm font-semibold text-blue-800 mb-1">Connect for automatic feedback tracking</p>
-          <p className="text-xs text-blue-600 mb-2">
-            Use the <strong>/api/webhook/feedback</strong> endpoint to auto-receive scores from MaidCentral review requests or GHL survey forms. Map: <code className="bg-white px-1 rounded">client_name</code>, <code className="bg-white px-1 rounded">rating</code> (1–5), <code className="bg-white px-1 rounded">comment</code>, <code className="bg-white px-1 rounded">tech_name</code>, <code className="bg-white px-1 rounded">feedback_date</code>.
-          </p>
-          <p className="text-xs text-blue-500">Until then, log feedback manually using "+ Log Feedback" above.</p>
-        </div>
-      )}
 
       {/* Manual entry form */}
       {showForm && (

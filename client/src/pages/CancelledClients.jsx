@@ -256,7 +256,7 @@ export default function CancelledClients() {
   )
 
   const catMax = Math.max(1, ...Object.values(stats.by_category || {}))
-  const years = [year - 1, year, year + 1]
+  const years = Array.from({ length: 5 }, (_, i) => year - 2 + i)
 
   return (
     <div>
@@ -376,7 +376,7 @@ export default function CancelledClients() {
       {/* KPI strip */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
         {[
-          { label: 'Total Cancelled', value: stats.total ?? '—', sub: `${selYear} YTD` },
+          { label: 'Total Cancelled', value: stats.total ?? '—', sub: `${selYear}` },
           { label: 'Save Rate', value: stats.total > 0 ? `${stats.save_rate}%` : '—', sub: `${stats.saved ?? 0} saved · ${stats.paused ?? 0} paused` },
           { label: 'Lost', value: stats.lost ?? '—', sub: 'no save outcome' },
           { label: 'Revenue Lost/Mo', value: stats.revenue_lost_monthly > 0 ? fmt$(stats.revenue_lost_monthly) : '—', sub: 'from logged records' },

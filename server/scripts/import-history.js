@@ -325,19 +325,32 @@ async function main() {
   const cancByMonth = await importCancellationCounts(clientWb)
 
   // 4. Patch monthly_sales with recurring_clients + cancellations + revenue from daily focus
+  //    Merge with existing data so leads/close counts from step 1 are preserved
   console.log('\n── Patching monthly_sales with Daily Focus totals ──')
-  for (const [month, totals] of Object.entries(dailyTotals)) {
-    const patch = {}
-    if (totals.recurring_clients !== null) patch.recurring_clients = totals.recurring_clients
-    if (cancByMonth[month] !== undefined) patch.cancellations = cancByMonth[month]
-    if (totals.initial_cleans > 0) patch.initial_cleans = totals.initial_cleans
-    if (totals.revenue !== null) patch.revenue = totals.revenue
-    if (totals.marketing_spend !== null) patch.marketing_spend = totals.marketing_spend
+  const existingSales = await get('/api/sales?limit=12')
+  const existingByMonth = Object.fromEntries(existingSales.map(s => [s.month, s]))
 
-    if (Object.keys(patch).length === 0) continue
+  for (const [month, totals] of Object.entries(dailyTotals)) {
+    const existing = existingByMonth[month] || {}
+    const merged = {
+      month,
+      leads_in:         existing.leads_in         || 0,
+      leads_quoted:     existing.leads_quoted      || 0,
+      leads_closed:     existing.leads_closed      || 0,
+      recurring_closed: existing.recurring_closed  || 0,
+      move_out_cleans:  existing.move_out_cleans   || 0,
+      retained:         existing.retained          || 0,
+      skips:            existing.skips             || 0,
+      complaints:       existing.complaints        || 0,
+      recurring_clients: totals.recurring_clients ?? existing.recurring_clients ?? null,
+      cancellations:    cancByMonth[month] ?? existing.cancellations ?? 0,
+      initial_cleans:   totals.initial_cleans > 0 ? totals.initial_cleans : (existing.initial_cleans || 0),
+      revenue:          totals.revenue ?? existing.revenue ?? 0,
+      marketing_spend:  totals.marketing_spend ?? existing.marketing_spend ?? null,
+    }
     try {
-      await post('/api/sales', { month, ...patch })
-      console.log(`  ✓ ${month} patched:`, JSON.stringify(patch))
+      await post('/api/sales', merged)
+      console.log(`  ✓ ${month}: rec_clients=${merged.recurring_clients}  canc=${merged.cancellations}  rev=$${merged.revenue}`)
     } catch (e) {
       console.error(`  ✗ ${month}:`, e.message)
     }

@@ -66,7 +66,9 @@ export default function Overview() {
     return (Date.now() - new Date(summary.last_entry_date).getTime()) / 86400000 > 3
   })()
 
-  const monthLabel = new Date(summary.month + '-01').toLocaleString('default', { month: 'long', year: 'numeric' })
+  const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December']
+  const [mYear, mMon] = summary.month.split('-')
+  const monthLabel = `${MONTH_NAMES[parseInt(mMon) - 1]} ${mYear}`
   const closeRate = summary.leads_quoted > 0 ? summary.leads_closed / summary.leads_quoted : null
   const dailyGoal = parseFloat(summary.settings?.daily_goal)
 
@@ -76,7 +78,7 @@ export default function Overview() {
     .filter(m => m.month <= currentMonth)
     .map(m => ({
       ...m,
-      fullLabel: new Date(m.month + '-01').toLocaleString('default', { month: 'long' }),
+      fullLabel: MONTH_NAMES[parseInt(m.month.split('-')[1]) - 1],
     }))
 
   const ytdRevenue = monthly

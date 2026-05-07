@@ -21,6 +21,13 @@ const FIELDS = [
     ],
   },
   {
+    section: 'Client Pricing (for Annual Value)',
+    fields: [
+      { key: 'avg_recurring_price', label: 'Avg Price per Recurring Clean', prefix: '$', type: 'number', hint: 'Used to calculate annual value for weekly/biweekly/monthly clients' },
+      { key: 'avg_onetime_price', label: 'Avg Price per One-Time Clean', prefix: '$', type: 'number', hint: 'Used for initial and one-off cleans' },
+    ],
+  },
+  {
     section: 'QuickBooks Expense Categories',
     fields: [
       { key: 'qb_marketing_category', label: 'Marketing Category Name', type: 'text', hint: 'Exact QuickBooks account/category name (e.g. "Advertising")' },

@@ -225,7 +225,7 @@ async function importCancellationCounts(wb) {
 
 // ─── BONUS TRACKER import ─────────────────────────────────────────────────────
 async function importBonusRecords(repId, salesByMonth) {
-  console.log('\n── Bonus Records (Sales Bonus Tracker) ──')
+  console.log('\n── Bonus Records + Lead Records (Sales Bonus Tracker) ──')
 
   const wb = xlsx.readFile(path.join(DOWNLOADS, 'Sales Bonus Tracker (1).xlsx'))
   const ONE_TIME_WORDS = ['one time', 'single', 'on demand', '1x', 'one-time']
@@ -250,8 +250,10 @@ async function importBonusRecords(repId, salesByMonth) {
     if (headerIdx === -1) continue
 
     const headers = data[headerIdx].map(h => h ? String(h).toLowerCase().trim() : '')
-    const freqIdx = headers.findIndex(h => h.includes('frequency'))
-    const paidIdx = headers.findIndex(h => h === 'paid')
+    const freqIdx    = headers.findIndex(h => h.includes('frequency'))
+    const paidIdx    = headers.findIndex(h => h === 'paid')
+    const nameIdx    = headers.findIndex(h => h.includes('client') || h.includes('name') || h.includes('customer'))
+    const dateIdx    = 0  // date sold is always col 0
 
     if (!accum[monthCode]) accum[monthCode] = { total: 0, recurring: 0, weekly_biweekly: 0 }
 
@@ -272,6 +274,25 @@ async function importBonusRecords(repId, salesByMonth) {
         accum[monthCode].recurring++
         if (WB_WORDS.some(w => freq.includes(w))) accum[monthCode].weekly_biweekly++
       }
+
+      // Save individual lead record
+      const rawDate = row[dateIdx]
+      const recordDate = typeof rawDate === 'number' ? xlDate(rawDate)
+        : typeof rawDate === 'string' && rawDate.match(/\d{4}/) ? rawDate.slice(0, 10)
+        : `${monthCode}-01`
+      const clientName = nameIdx >= 0 && row[nameIdx] ? String(row[nameIdx]).trim() : null
+      const externalId = `bonus-${monthCode}-${i}`
+
+      try {
+        await post('/api/leads', {
+          record_date: recordDate || `${monthCode}-01`,
+          client_name: clientName,
+          frequency: freq || 'one_time',
+          rep_name: 'Lexi',
+          source: 'import',
+          external_id: externalId,
+        })
+      } catch (_) { /* ignore duplicate */ }
     }
   }
 

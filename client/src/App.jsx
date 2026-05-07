@@ -5,6 +5,7 @@ import Sales from './pages/Sales'
 import BonusTracker from './pages/BonusTracker'
 import UnitEconomics from './pages/UnitEconomics'
 import Hiring from './pages/Hiring'
+import Leads from './pages/Leads'
 import Connections from './pages/Connections'
 import Entry from './pages/Entry'
 import Settings from './pages/Settings'
@@ -21,6 +22,7 @@ export default function App() {
           <Route path="/bonus" element={<BonusTracker />} />
           <Route path="/economics" element={<UnitEconomics />} />
           <Route path="/hiring" element={<Hiring />} />
+          <Route path="/leads" element={<Leads />} />
           <Route path="/entry" element={<Entry />} />
           <Route path="/connections" element={<Connections />} />
           <Route path="/settings" element={<Settings />} />

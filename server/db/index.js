@@ -24,6 +24,21 @@ const migrations = [
   `INSERT OR IGNORE INTO settings (key, value) VALUES ('stretch_hours', '7')`,
   `CREATE UNIQUE INDEX IF NOT EXISTS idx_manual_entries_date_by ON manual_entries (entry_date, entered_by)`,
   `ALTER TABLE bonus_records ADD COLUMN weekly_biweekly_closed INTEGER DEFAULT 0`,
+  `CREATE TABLE IF NOT EXISTS lead_records (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    record_date   TEXT NOT NULL,
+    client_name   TEXT,
+    frequency     TEXT,
+    price_per_clean REAL,
+    rep_name      TEXT,
+    month         TEXT,
+    source        TEXT DEFAULT 'manual',
+    external_id   TEXT UNIQUE,
+    notes         TEXT,
+    created_at    TEXT DEFAULT (datetime('now'))
+  )`,
+  `INSERT OR IGNORE INTO settings (key, value) VALUES ('avg_recurring_price', NULL)`,
+  `INSERT OR IGNORE INTO settings (key, value) VALUES ('avg_onetime_price', NULL)`,
 ]
 for (const sql of migrations) {
   try { db.exec(sql) } catch (_) { /* column already exists — safe to ignore */ }

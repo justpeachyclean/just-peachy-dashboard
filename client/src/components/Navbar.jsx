@@ -5,6 +5,7 @@ const tabs = [
   { path: '/sales', label: 'Sales & Leads' },
   { path: '/bonus', label: 'Bonus Tracker' },
   { path: '/economics', label: 'Unit Economics' },
+  { path: '/leads', label: 'Client Log' },
   { path: '/hiring', label: 'Hiring' },
   { path: '/connections', label: 'Connections' },
 ]

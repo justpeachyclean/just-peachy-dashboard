@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { exportCsv } from '../utils/exportCsv'
 
 const fmtPct = (n) => n !== null && n !== undefined ? `${(n * 100).toFixed(1)}%` : '—'
 const fmt$ = (n) => `$${Number(n || 0).toLocaleString()}`
@@ -199,6 +200,10 @@ export default function BonusTracker() {
           <p className="text-sm text-gray-500 mt-0.5">Per-rep tier calculations &amp; payout calendar</p>
         </div>
         <div className="flex gap-2">
+          <button
+            onClick={() => exportCsv(`jpc-bonus-${new Date().toISOString().slice(0,10)}.csv`, records.map(r => ({ month: r.month, rep: r.rep_name, tier: r.tier, bonus: r.bonus_amount, streak_bonus: r.streak_bonus, paid: r.paid ? 'Yes' : 'No', payout_month: r.payout_month })))}
+            className="btn-secondary text-sm"
+          >↓ Export CSV</button>
           <button onClick={() => openRecordForm()} className="btn-primary text-sm">+ Log Month</button>
           <button onClick={() => openRepForm()} className="text-sm border border-gray-200 bg-white text-gray-600 hover:text-ink font-medium px-4 py-2 rounded-lg transition-colors">+ Add Rep</button>
         </div>

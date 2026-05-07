@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { exportCsv } from '../utils/exportCsv'
 import { Link } from 'react-router-dom'
 
 const fmt$ = (n) => n !== null && n !== undefined ? `$${Number(n).toLocaleString(undefined, { maximumFractionDigits: 0 })}` : '—'
@@ -82,7 +83,17 @@ export default function UnitEconomics() {
           <h1 className="text-2xl font-bold text-ink">Unit Economics</h1>
           <p className="text-sm text-gray-500 mt-0.5">YTD {year} — CAC, LTV, turnover cost &amp; productivity</p>
         </div>
-        <Link to="/settings" className="text-xs text-sage hover:underline">Configure inputs →</Link>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => {
+              if (!data?.metrics) return
+              const m = data.metrics
+              exportCsv(`jpc-economics-${year}.csv`, [{ year, cpl: m.cpl, cac: m.cac, ltv: m.ltv, ltv_cac_ratio: m.ltv_cac_ratio, attrition_rate: m.attrition_rate, revenue_per_rge: m.revenue_per_rge, training_cost_per_hire: m.training_cost_per_hire, cost_of_turnover: m.cost_of_turnover }])
+            }}
+            className="btn-secondary text-sm"
+          >↓ Export CSV</button>
+          <Link to="/settings" className="text-xs text-sage hover:underline">Configure inputs →</Link>
+        </div>
       </div>
 
       <MissingInputsNote inputs={missingInputs} />

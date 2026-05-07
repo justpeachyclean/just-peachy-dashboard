@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { exportCsv } from '../utils/exportCsv'
 import { Link } from 'react-router-dom'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, Cell } from 'recharts'
 
@@ -89,6 +90,10 @@ export default function Hiring() {
             <span className="text-sm font-medium text-gray-700 w-12 text-center">{year}</span>
             <button onClick={() => setYear(y => y + 1)} className="text-gray-400 hover:text-ink px-2 py-1 rounded text-sm">›</button>
           </div>
+          <button
+            onClick={() => exportCsv(`jpc-hiring-${year}.csv`, data.months.filter(m => m.has_data).map(m => ({ month: m.month, new_hires: m.new_hires, quit: m.quit, fired: m.fired, call_ins: m.call_ins, net_change: m.net_change, avg_rge: m.avg_rge })))}
+            className="btn-secondary text-sm"
+          >↓ Export CSV</button>
           <Link to="/entry" className="btn-primary text-sm">+ Log Data</Link>
         </div>
       </div>

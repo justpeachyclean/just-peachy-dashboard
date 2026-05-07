@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { exportCsv } from '../utils/exportCsv'
 
 const fmt$ = (n) => `$${Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}`
 const fmtPct = (n, decimals = 1) => `${(n * 100).toFixed(decimals)}%`
@@ -132,7 +133,13 @@ export default function Sales() {
           <h1 className="text-2xl font-bold text-ink">Sales &amp; Leads</h1>
           <p className="text-sm text-gray-500 mt-0.5">Monthly funnel performance</p>
         </div>
-        <button onClick={() => openForm()} className="btn-primary text-sm">+ Add / Edit Month</button>
+        <div className="flex gap-2">
+          <button
+            onClick={() => exportCsv(`jpc-sales-${new Date().toISOString().slice(0,10)}.csv`, rows)}
+            className="btn-secondary text-sm"
+          >↓ Export CSV</button>
+          <button onClick={() => openForm()} className="btn-primary text-sm">+ Add / Edit Month</button>
+        </div>
       </div>
 
       {/* YTD summary cards */}

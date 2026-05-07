@@ -19,6 +19,7 @@ const migrations = [
   `INSERT OR IGNORE INTO settings (key, value) VALUES ('billing_rate_per_rge', '55')`,
   `INSERT OR IGNORE INTO settings (key, value) VALUES ('goal_hours', '6.5')`,
   `INSERT OR IGNORE INTO settings (key, value) VALUES ('stretch_hours', '7')`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS idx_manual_entries_date_by ON manual_entries (entry_date, entered_by)`,
 ]
 for (const sql of migrations) {
   try { db.exec(sql) } catch (_) { /* column already exists — safe to ignore */ }

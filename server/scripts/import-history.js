@@ -1,5 +1,5 @@
 /**
- * Historical data import — reads all 3 spreadsheets and POSTs to the API.
+ * Historical data import — reads all spreadsheets and POSTs to the API.
  * Usage: node scripts/import-history.js [API_BASE_URL]
  * Default URL: https://brave-success-production-41ea.up.railway.app
  */
@@ -26,9 +26,10 @@ async function get(endpoint) {
 }
 
 const MONTH_NAMES = {
-  january: '01', february: '02', febuary: '02', march: '03', april: '04',
-  may: '05', june: '06', july: '07', august: '08',
-  september: '09', october: '10', november: '11', december: '12',
+  january: '01', february: '02', febuary: '02', feb: '02',
+  march: '03', april: '04', may: '05', june: '06',
+  july: '07', august: '08', september: '09', october: '10',
+  november: '11', december: '12',
 }
 
 function parseMonthCode(str) {
@@ -42,103 +43,150 @@ function parseMonthCode(str) {
   return null
 }
 
-// ─── MONTHLY SHEET import ────────────────────────────────────────────────────
-async function importMonthlySales(wb) {
-  console.log('\n── Monthly Sales (MONTHLY sheet) ──')
-  const sheet = wb.Sheets['MONTHLY']
-  const rows = xlsx.utils.sheet_to_json(sheet, { header: 1, defval: null })
+// Excel serial date → YYYY-MM-DD
+function xlDate(v) {
+  if (typeof v !== 'number') return null
+  const d = new Date(Date.UTC(1899, 11, 30) + v * 86400000)
+  return d.toISOString().slice(0, 10)
+}
 
-  // Row indices confirmed from inspection:
-  const R = {
-    total_recurring: 6, leads_in: 7, leads_quoted: 8, leads_closed: 9,
-    cancellations: 11, skips: 12, move_out_cleans: 15,
-    initial_cleans: 16, retained: 17,
-    revenue: 22, marketing_spend: 23,
-    interviews: 27, showed_up: 28, job_offers: 29,
-    new_hires: 30, call_ins: 31, quit_fired: 32,
+// ─── CLIENT LOG SHEETS (leads/close/recurring by month) ───────────────────────
+async function importLeadSheets(wb) {
+  console.log('\n── Lead/Client Log Sheets ──')
+
+  // Sheet name → month code
+  const SHEETS = {
+    'January 2026 Leads':  '2026-01',
+    'February 2026 Leads': '2026-02',
+    'Client log March 2026': '2026-03',
+    'Client Log April 2026': '2026-04',
+    'Client Log May 2026 ':  '2026-05',
   }
 
-  // Columns: 1=Jan, 2=Feb, 3=Mar … 12=Dec
-  for (let col = 1; col <= 12; col++) {
-    const month = `2026-${String(col).padStart(2, '0')}`
-    const n = (r) => {
-      const v = rows[r]?.[col]
-      return typeof v === 'number' ? v : 0
-    }
+  for (const [sn, month] of Object.entries(SHEETS)) {
+    const sheet = wb.Sheets[sn]
+    if (!sheet) { console.log(`  ✗ ${month}: sheet not found`); continue }
 
-    const leads_in = n(R.leads_in)
-    const revenue = n(R.revenue)
-    if (leads_in === 0 && revenue === 0) continue // no data for this month
+    const rows = xlsx.utils.sheet_to_json(sheet, { header: 1, defval: null })
+    let leads = 0, quoted = 0, converted = 0, recurring = 0
 
-    const payload = {
-      month,
-      leads_in,
-      leads_quoted: n(R.leads_quoted),
-      leads_closed: n(R.leads_closed),
-      recurring_closed: 0, // filled in from bonus tracker
-      initial_cleans: n(R.initial_cleans),
-      move_out_cleans: n(R.move_out_cleans),
-      retained: n(R.retained),
-      cancellations: n(R.cancellations),
-      skips: n(R.skips),
-      recurring_clients: n(R.total_recurring),
-      revenue,
-      marketing_spend: n(R.marketing_spend) || null,
+    for (let i = 4; i < rows.length; i++) {
+      const r = rows[i]
+      if (!r) continue
+      const date = r[0]
+      if (!date) continue
+      if (typeof date === 'string' && (
+        date.toLowerCase().includes('date') ||
+        date.toLowerCase().includes('highlight') ||
+        date.toLowerCase().includes('instructions')
+      )) continue
+      leads++
+      if (r[8] != null && r[8] !== '') quoted++
+      const conv = r[10] ? String(r[10]).toLowerCase().trim() : ''
+      if (conv === 'y' || conv === 'yes') converted++
+      const rec = r[11] ? String(r[11]).toLowerCase().trim() : ''
+      if (rec === 'y' || rec === 'yes') recurring++
     }
 
     try {
-      await post('/api/sales', payload)
-      console.log(`  ✓ ${month}  leads=${leads_in}  rev=$${revenue.toLocaleString()}`)
+      await post('/api/sales', {
+        month,
+        leads_in: leads,
+        leads_quoted: quoted,
+        leads_closed: converted,
+        recurring_closed: recurring,
+      })
+      console.log(`  ✓ ${month}  leads=${leads}  quoted=${quoted}  closed=${converted}  recurring=${recurring}`)
     } catch (e) {
       console.error(`  ✗ ${month}:`, e.message)
     }
   }
 }
 
-// ─── DAILY FOCUS sheets import ───────────────────────────────────────────────
-async function importDailyEntries(wb) {
-  console.log('\n── Daily Entries (Daily Focus sheets) ──')
+// ─── DAILY FOCUS SHEETS (daily RGE, revenue, absences, cancellations) ─────────
+async function importDailyFocus(wb) {
+  console.log('\n── Daily Focus Sheets (per-day entries) ──')
 
-  // Row indices confirmed from inspection:
-  const ROW_ABSENCES = 13
-  const ROW_RGE = 27
-  const ROW_MARKETING = 36
+  const SHEETS = {
+    'Daily Focus January 2026': '2026-01',
+    'Daily Focus Feb 2026':     '2026-02',
+    'Daily Focus March 2026':   '2026-03',
+    'Daily Focus April 2026':   '2026-04',
+    'Daily Focus May 2026':     '2026-05',
+  }
 
-  for (const sheetName of wb.SheetNames) {
-    if (!sheetName.toLowerCase().startsWith('daily focus')) continue
+  // Row indices in the new format
+  const R = {
+    rec_clients:  1,
+    leads:        2,
+    leads_quoted: 3,
+    leads_conv:   5,
+    initial:      7,
+    retained:     9,
+    new_recurring:11,
+    absences:    13,
+    complaints:  14,
+    cancellations:15,
+    daily_rev:   20,
+    rge:         27,
+    rev_goal:    28,
+    stretch:     29,
+    marketing:   36,
+  }
 
-    const monthCode = parseMonthCode(sheetName)
-    if (!monthCode) continue
+  const monthlyTotals = {}
 
-    const sheet = wb.Sheets[sheetName]
+  for (const [sn, monthCode] of Object.entries(SHEETS)) {
+    const sheet = wb.Sheets[sn]
+    if (!sheet) { console.log(`  ✗ ${monthCode}: sheet not found`); continue }
+
     const rows = xlsx.utils.sheet_to_json(sheet, { header: 1, defval: null })
-
+    const headerRow = rows[0] || []
     const [yr, mo] = monthCode.split('-').map(Number)
     const daysInMonth = new Date(yr, mo, 0).getDate()
 
-    // Row 0 has day numbers in columns 3+ (col D onwards)
-    const dayRow = rows[0] || []
     let imported = 0
+    let lastRecClients = null
+    let totalCancellations = 0
+    let totalInitialCleans = 0
+    let totalRevenue = 0
+    let totalMarketing = 0
 
-    for (let c = 3; c < dayRow.length; c++) {
-      const day = dayRow[c]
-      if (typeof day !== 'number' || day < 1 || day > daysInMonth) continue
+    // Col index = day + 2 (col 3 = day 1, col 4 = day 2, ...)
+    // Header values confirm: col N has header value N-2
+    for (let col = 3; col < headerRow.length - 1; col++) {
+      const dayNum = headerRow[col]
+      if (typeof dayNum !== 'number') continue
+      if (dayNum < 1 || dayNum > daysInMonth) continue
 
-      const rge = rows[ROW_RGE]?.[c]
-      const absences = rows[ROW_ABSENCES]?.[c]
-      const mkt = rows[ROW_MARKETING]?.[c]
+      const rge   = rows[R.rge]?.[col]
+      const abs   = rows[R.absences]?.[col]
+      const mkt   = rows[R.marketing]?.[col]
+      const rev   = rows[R.daily_rev]?.[col]
+      const canc  = rows[R.cancellations]?.[col]
+      const init  = rows[R.initial]?.[col]
+      const recC  = rows[R.rec_clients]?.[col]
 
-      const hasData = (typeof rge === 'number' && rge > 0) ||
-                      (typeof absences === 'number' && absences > 0) ||
-                      (typeof mkt === 'number' && mkt > 0)
+      const hasData = (typeof rge === 'number' && rge > 0)
+                   || (typeof abs === 'number' && abs > 0)
+                   || (typeof mkt === 'number' && mkt > 0)
+                   || (typeof rev === 'number' && rev > 0)
       if (!hasData) continue
 
-      const entryDate = `${yr}-${String(mo).padStart(2,'0')}-${String(day).padStart(2,'0')}`
+      if (typeof recC === 'number') lastRecClients = recC
+      if (typeof canc === 'number') totalCancellations += canc
+      if (typeof init === 'number') totalInitialCleans += init
+      if (typeof rev  === 'number' && rev > 0) totalRevenue += rev
+      if (typeof mkt  === 'number' && mkt > 0) totalMarketing += mkt
+
+      const dayStr = String(dayNum).padStart(2, '0')
+      const entryDate = `${yr}-${String(mo).padStart(2,'0')}-${dayStr}`
+
       try {
         await post('/api/entry/manual', {
           entry_date: entryDate,
           revenue_generating_employees: typeof rge === 'number' ? Math.round(rge) : null,
-          absences: typeof absences === 'number' ? Math.round(absences) : 0,
+          absences: typeof abs === 'number' ? Math.round(abs * 2) / 2 : 0,
           marketing_spend: typeof mkt === 'number' && mkt > 0 ? mkt : null,
           entered_by: 'import',
         })
@@ -147,8 +195,39 @@ async function importDailyEntries(wb) {
         console.error(`    ✗ ${entryDate}:`, e.message)
       }
     }
-    console.log(`  ✓ ${monthCode} (${sheetName.replace('Daily Focus ', '')}): ${imported} days imported`)
+
+    monthlyTotals[monthCode] = {
+      recurring_clients: lastRecClients,
+      cancellations: Math.round(totalCancellations),
+      initial_cleans: Math.round(totalInitialCleans),
+      revenue: totalRevenue > 0 ? Math.round(totalRevenue * 100) / 100 : null,
+      marketing_spend: totalMarketing > 0 ? Math.round(totalMarketing * 100) / 100 : null,
+    }
+
+    console.log(`  ✓ ${monthCode}: ${imported} days  rec_clients=${lastRecClients}  cancellations=${totalCancellations}  rev=$${totalRevenue.toFixed(0)}`)
   }
+
+  return monthlyTotals
+}
+
+// ─── CANCELLATIONS SHEET (individual records → monthly counts) ─────────────────
+async function importCancellationCounts(wb) {
+  console.log('\n── Cancellations Sheet ──')
+  const sheet = wb.Sheets['Cancellations']
+  if (!sheet) { console.log('  ✗ Sheet not found'); return {} }
+
+  const rows = xlsx.utils.sheet_to_json(sheet, { header: 1, defval: null })
+  const byMonth = {}
+  for (let i = 1; i < rows.length; i++) {
+    const r = rows[i]
+    if (!r || !r[0]) continue
+    const dateStr = xlDate(r[0])
+    if (!dateStr) continue
+    const mo = dateStr.slice(0, 7)
+    byMonth[mo] = (byMonth[mo] || 0) + 1
+  }
+  console.log('  Cancellations by month:', JSON.stringify(byMonth))
+  return byMonth
 }
 
 // ─── BONUS TRACKER import ─────────────────────────────────────────────────────
@@ -158,7 +237,6 @@ async function importBonusRecords(repId, salesByMonth) {
   const wb = xlsx.readFile(path.join(DOWNLOADS, 'Sales Bonus Tracker (1).xlsx'))
   const ONE_TIME_WORDS = ['one time', 'single', 'on demand', '1x', 'one-time']
 
-  // Accumulate across Recurring + One Time sheets for the same month
   const accum = {}
 
   for (const sheetName of wb.SheetNames) {
@@ -169,7 +247,6 @@ async function importBonusRecords(repId, salesByMonth) {
     const sheet = wb.Sheets[sheetName]
     const data = xlsx.utils.sheet_to_json(sheet, { header: 1, defval: null })
 
-    // Find header row
     let headerIdx = -1
     for (let i = 0; i < Math.min(data.length, 10); i++) {
       if (data[i]?.some(v => v && String(v).toLowerCase().includes('date sold'))) {
@@ -186,11 +263,10 @@ async function importBonusRecords(repId, salesByMonth) {
 
     for (let i = headerIdx + 1; i < data.length; i++) {
       const row = data[i]
-      if (!row?.[0] || row[0] === data[headerIdx][0]) continue // skip blank/dup header
-      // Skip template empty rows (no date value)
+      if (!row?.[0] || row[0] === data[headerIdx][0]) continue
       if (typeof row[0] === 'string' && !row[0].match(/\d/)) continue
       if (paidIdx >= 0 && row[0] && data.length > 200 && i > 100 &&
-          row[paidIdx] === false) continue // skip unfilled template rows in Dec sheet
+          row[paidIdx] === false) continue
 
       accum[monthCode].total++
 
@@ -202,7 +278,6 @@ async function importBonusRecords(repId, salesByMonth) {
     }
   }
 
-  // Post one bonus record per month
   for (const [month, { total, recurring }] of Object.entries(accum)) {
     if (total === 0) continue
     const sales = salesByMonth[month]
@@ -237,16 +312,38 @@ async function main() {
   }
   console.log(`Found rep: ${lexi.name} (id=${lexi.id})`)
 
-  // Load integrated tracker
-  const wb = xlsx.readFile(path.join(DOWNLOADS, '2026_Business_Tracker_INTEGRATED.xlsx'))
+  // Load the client logs tracker (new, richer file)
+  const clientWb = xlsx.readFile(path.join(DOWNLOADS, 'Client logs_Tracker 2026 (2).xlsx'))
 
-  // 1. Monthly sales
-  await importMonthlySales(wb)
+  // 1. Lead counts from client log sheets (most accurate)
+  await importLeadSheets(clientWb)
 
-  // 2. Daily entries
-  await importDailyEntries(wb)
+  // 2. Daily entries + monthly totals from Daily Focus sheets
+  const dailyTotals = await importDailyFocus(clientWb)
 
-  // 3. Bonus records (needs monthly sales data for quotes_given)
+  // 3. Cancellation counts from the Cancellations sheet
+  const cancByMonth = await importCancellationCounts(clientWb)
+
+  // 4. Patch monthly_sales with recurring_clients + cancellations + revenue from daily focus
+  console.log('\n── Patching monthly_sales with Daily Focus totals ──')
+  for (const [month, totals] of Object.entries(dailyTotals)) {
+    const patch = {}
+    if (totals.recurring_clients !== null) patch.recurring_clients = totals.recurring_clients
+    if (cancByMonth[month] !== undefined) patch.cancellations = cancByMonth[month]
+    if (totals.initial_cleans > 0) patch.initial_cleans = totals.initial_cleans
+    if (totals.revenue !== null) patch.revenue = totals.revenue
+    if (totals.marketing_spend !== null) patch.marketing_spend = totals.marketing_spend
+
+    if (Object.keys(patch).length === 0) continue
+    try {
+      await post('/api/sales', { month, ...patch })
+      console.log(`  ✓ ${month} patched:`, JSON.stringify(patch))
+    } catch (e) {
+      console.error(`  ✗ ${month}:`, e.message)
+    }
+  }
+
+  // 5. Bonus records (use updated monthly sales data for quotes_given)
   const salesData = await get('/api/sales?limit=12')
   const salesByMonth = Object.fromEntries(salesData.map(s => [s.month, s]))
   await importBonusRecords(lexi.id, salesByMonth)

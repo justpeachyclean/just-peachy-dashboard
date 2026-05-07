@@ -24,6 +24,15 @@ router.post('/', (req, res) => {
       (entry_date, new_hires, staff_quit, staff_fired, call_ins, absences,
        revenue_generating_employees, marketing_spend, notes, entered_by)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(entry_date, entered_by) DO UPDATE SET
+      new_hires = excluded.new_hires,
+      staff_quit = excluded.staff_quit,
+      staff_fired = excluded.staff_fired,
+      call_ins = excluded.call_ins,
+      absences = excluded.absences,
+      revenue_generating_employees = excluded.revenue_generating_employees,
+      marketing_spend = excluded.marketing_spend,
+      notes = excluded.notes
   `)
 
   const result = insert.run(

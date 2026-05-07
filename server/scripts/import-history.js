@@ -297,6 +297,51 @@ async function importBonusRecords(repId, salesByMonth) {
   }
 }
 
+// ─── HIRING DATA (2026 Snapshots MONTHLY sheet) ───────────────────────────────
+async function importHiringData() {
+  console.log('\n── Hiring Data (2026 Snapshots MONTHLY) ──')
+
+  const SNAPSHOTS_FILE = path.join(DOWNLOADS, '2026 SNAPSHOTS DAILY WEEKLY MONTHLY... (2).xlsx')
+  const wb = xlsx.readFile(SNAPSHOTS_FILE)
+  const sheet = wb.Sheets['MONTHLY']
+  if (!sheet) { console.log('  ✗ MONTHLY sheet not found'); return }
+
+  const rows = xlsx.utils.sheet_to_json(sheet, { header: 1, defval: null })
+
+  // Header: col 0=label, cols 1-13=Week 1-4 through Week 49-52, col 14=totals
+  // Map cols 1-12 → Jan-Dec (skip col 13, the week 49-52 overflow)
+  const ROW = { new_hires: 30, quit_fired: 32, call_ins: 31 }
+
+  for (let i = 0; i < 12; i++) {
+    const col = i + 1
+    const month = String(i + 1).padStart(2, '0')
+    const entryDate = `2026-${month}-01`
+
+    const newHires  = rows[ROW.new_hires]?.[col]
+    const quitFired = rows[ROW.quit_fired]?.[col]
+    const callIns   = rows[ROW.call_ins]?.[col]
+
+    const hasData = (typeof newHires === 'number' && newHires > 0)
+                 || (typeof quitFired === 'number' && quitFired > 0)
+                 || (typeof callIns === 'number' && callIns > 0)
+    if (!hasData) continue
+
+    try {
+      await post('/api/entry/manual', {
+        entry_date: entryDate,
+        new_hires:  typeof newHires === 'number'  ? Math.round(newHires)  : 0,
+        staff_quit: typeof quitFired === 'number' ? Math.round(quitFired) : 0,
+        staff_fired: 0,
+        call_ins:   typeof callIns === 'number'   ? callIns               : 0,
+        entered_by: 'snapshot',
+      })
+      console.log(`  ✓ 2026-${month}: hires=${Math.round(newHires || 0)}  exits=${Math.round(quitFired || 0)}  call_ins=${callIns || 0}`)
+    } catch (e) {
+      console.error(`  ✗ 2026-${month}:`, e.message)
+    }
+  }
+}
+
 // ─── MAIN ────────────────────────────────────────────────────────────────────
 async function main() {
   console.log(`Importing to: ${API_BASE}\n`)
@@ -358,6 +403,9 @@ async function main() {
   const salesData = await get('/api/sales?limit=12')
   const salesByMonth = Object.fromEntries(salesData.map(s => [s.month, s]))
   await importBonusRecords(lexi.id, salesByMonth)
+
+  // 6. Hiring data from 2026 Snapshots MONTHLY sheet
+  await importHiringData()
 
   console.log('\n✅ Import complete!')
 }

@@ -3,6 +3,9 @@ const path = require('path')
 const SCHEMA = require('./schema')
 
 const DB_PATH = process.env.DB_PATH || path.join(__dirname, '..', 'data', 'peachy.db')
+if (!process.env.DB_PATH && process.env.NODE_ENV === 'production') {
+  console.warn('⚠️  DB_PATH not set — using container path, data will not persist across deployments. Set DB_PATH=/data/peachy.db in Railway Variables.')
+}
 
 // Ensure data directory exists
 const fs = require('fs')

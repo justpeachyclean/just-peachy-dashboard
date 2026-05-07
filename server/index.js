@@ -19,7 +19,10 @@ app.use('/api/bonus',          require('./routes/bonus'))
 
 // Health check
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', ts: new Date().toISOString() })
+  const db = require('./db')
+  const dbPath = process.env.DB_PATH || require('path').join(__dirname, 'data', 'peachy.db')
+  const settingCount = db.prepare('SELECT COUNT(*) as n FROM settings').get().n
+  res.json({ status: 'ok', ts: new Date().toISOString(), db_path: dbPath, settings_count: settingCount })
 })
 
 // Serve built client in production

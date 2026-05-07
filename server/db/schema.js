@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS manual_entries (
   staff_quit                    INTEGER DEFAULT 0,
   staff_fired                   INTEGER DEFAULT 0,
   call_ins                      REAL    DEFAULT 0,
+  absences                      INTEGER DEFAULT 0,
   revenue_generating_employees  INTEGER,
   marketing_spend               REAL,
   notes                         TEXT,
@@ -106,6 +107,7 @@ CREATE TABLE IF NOT EXISTS monthly_sales (
   revenue             REAL    DEFAULT 0,
   marketing_spend     REAL,
   recurring_clients   INTEGER,             -- snapshot at end of month
+  move_out_cleans     INTEGER DEFAULT 0,
   notes               TEXT,
   updated_at          TEXT DEFAULT (datetime('now'))
 );
@@ -131,7 +133,10 @@ INSERT OR IGNORE INTO settings (key, value) VALUES
   ('qb_marketing_category',     'Advertising'),
   ('qb_recruiting_category',    'Recruiting'),
   ('qb_training_category',      'Training'),
-  ('webhook_secret',            'change-me-before-connecting-zapier');
+  ('webhook_secret',            'change-me-before-connecting-zapier'),
+  ('billing_rate_per_rge',      '55'),
+  ('goal_hours',                '6.5'),
+  ('stretch_hours',             '7');
 `;
 
 module.exports = SCHEMA;

@@ -6,8 +6,8 @@ const fmt$ = (n) => `$${Number(n || 0).toLocaleString()}`
 
 const TIERS = [
   { tier: 1, label: 'Tier 1', criteria: 'Close rate ≥ 40%', amount: 200, color: 'bg-amber-50 border-amber-200 text-amber-800' },
-  { tier: 2, label: 'Tier 2', criteria: '≥ 40% close + ≥ 50% recurring', amount: 400, color: 'bg-ok/10 border-ok/30 text-ok' },
-  { tier: 3, label: 'Tier 3', criteria: '≥ 40% close + ≥ 75% recurring', amount: 700, color: 'bg-brand/10 border-brand/30 text-brand' },
+  { tier: 2, label: 'Tier 2', criteria: '≥ 40% close + ≥ 50% of recurring are W/BW', amount: 400, color: 'bg-ok/10 border-ok/30 text-ok' },
+  { tier: 3, label: 'Tier 3', criteria: '≥ 40% close + ≥ 75% of recurring are W/BW', amount: 700, color: 'bg-brand/10 border-brand/30 text-brand' },
 ]
 
 const TIER_COLORS = {
@@ -59,7 +59,7 @@ export default function BonusTracker() {
 
   // Record entry modal
   const [showRecordForm, setShowRecordForm] = useState(false)
-  const [recordForm, setRecordForm] = useState({ rep_id: '', month: '', quotes_given: '', closed_sales: '', recurring_closed: '' })
+  const [recordForm, setRecordForm] = useState({ rep_id: '', month: '', quotes_given: '', closed_sales: '', recurring_closed: '', weekly_biweekly_closed: '' })
   const [recordSaving, setRecordSaving] = useState(false)
   const [recordResult, setRecordResult] = useState(null)
   const [recordMsg, setRecordMsg] = useState('')
@@ -136,6 +136,7 @@ export default function BonusTracker() {
       quotes_given: existing?.quotes_given ?? '',
       closed_sales: existing?.closed_sales ?? '',
       recurring_closed: existing?.recurring_closed ?? '',
+      weekly_biweekly_closed: existing?.weekly_biweekly_closed ?? '',
     })
     setRecordResult(null)
     setRecordMsg('')
@@ -153,6 +154,7 @@ export default function BonusTracker() {
         quotes_given: parseInt(recordForm.quotes_given) || 0,
         closed_sales: parseInt(recordForm.closed_sales) || 0,
         recurring_closed: parseInt(recordForm.recurring_closed) || 0,
+        weekly_biweekly_closed: parseInt(recordForm.weekly_biweekly_closed) || 0,
       }
       const res = await fetch('/api/bonus/records', {
         method: 'POST',
@@ -458,8 +460,12 @@ export default function BonusTracker() {
                 <input type="number" min="0" className="form-input" value={recordForm.closed_sales} onChange={e => setRecordForm(p => ({ ...p, closed_sales: e.target.value }))} />
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Recurring Closed (weekly/biweekly)</label>
+                <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Total Recurring Closed</label>
                 <input type="number" min="0" className="form-input" value={recordForm.recurring_closed} onChange={e => setRecordForm(p => ({ ...p, recurring_closed: e.target.value }))} />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Weekly / Biweekly (subset of recurring)</label>
+                <input type="number" min="0" className="form-input" value={recordForm.weekly_biweekly_closed} onChange={e => setRecordForm(p => ({ ...p, weekly_biweekly_closed: e.target.value }))} />
               </div>
 
               {recordResult && (
@@ -468,7 +474,7 @@ export default function BonusTracker() {
                     {recordResult.tier > 0 ? `Tier ${recordResult.tier} — ${fmt$(recordResult.bonus_amount)}/mo` : 'No tier reached'}
                   </p>
                   <p className="text-xs text-gray-500">
-                    Close rate: {fmtPct(recordResult.close_rate)} · Recurring ratio: {fmtPct(recordResult.recurring_ratio)}
+                    Close rate: {fmtPct(recordResult.close_rate)} · W/BW ratio: {fmtPct(recordResult.recurring_ratio)}
                   </p>
                   {recordResult.quarterly_bonus > 0 && (
                     <p className="text-xs text-ok font-semibold mt-1">🎉 Quarterly streak bonus: +{fmt$(recordResult.quarterly_bonus)}</p>

@@ -63,6 +63,7 @@ router.post('/records', (req, res) => {
     quotes_given = 0,
     closed_sales = 0,
     recurring_closed = 0,
+    weekly_biweekly_closed = 0,
     status = 'pending',
     paid_date,
   } = req.body
@@ -71,9 +72,10 @@ router.post('/records', (req, res) => {
   if (!/^\d{4}-\d{2}$/.test(month)) return res.status(400).json({ error: 'month must be YYYY-MM' })
 
   const close_rate = quotes_given > 0 ? closed_sales / quotes_given : 0
-  const recurring_ratio = closed_sales > 0 ? recurring_closed / closed_sales : 0
+  // Tier ratio: what % of recurring closes are weekly or biweekly
+  const recurring_ratio = recurring_closed > 0 ? weekly_biweekly_closed / recurring_closed : 0
 
-  // Tier logic
+  // Tier logic — close rate ≥ 40% required; tier determined by W/BW ratio
   let tier = 0
   let bonus_amount = 0
   if (close_rate >= 0.4) {
@@ -107,25 +109,26 @@ router.post('/records', (req, res) => {
 
   db.prepare(`
     INSERT INTO bonus_records
-      (rep_id, month, quotes_given, closed_sales, recurring_closed,
+      (rep_id, month, quotes_given, closed_sales, recurring_closed, weekly_biweekly_closed,
        close_rate, recurring_ratio, tier, bonus_amount, quarterly_bonus,
        payout_month, status, paid_date, updated_at)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,datetime('now'))
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,datetime('now'))
     ON CONFLICT(rep_id, month) DO UPDATE SET
-      quotes_given     = excluded.quotes_given,
-      closed_sales     = excluded.closed_sales,
-      recurring_closed = excluded.recurring_closed,
-      close_rate       = excluded.close_rate,
-      recurring_ratio  = excluded.recurring_ratio,
-      tier             = excluded.tier,
-      bonus_amount     = excluded.bonus_amount,
-      quarterly_bonus  = excluded.quarterly_bonus,
-      payout_month     = excluded.payout_month,
-      status           = excluded.status,
-      paid_date        = excluded.paid_date,
-      updated_at       = datetime('now')
+      quotes_given             = excluded.quotes_given,
+      closed_sales             = excluded.closed_sales,
+      recurring_closed         = excluded.recurring_closed,
+      weekly_biweekly_closed   = excluded.weekly_biweekly_closed,
+      close_rate               = excluded.close_rate,
+      recurring_ratio          = excluded.recurring_ratio,
+      tier                     = excluded.tier,
+      bonus_amount             = excluded.bonus_amount,
+      quarterly_bonus          = excluded.quarterly_bonus,
+      payout_month             = excluded.payout_month,
+      status                   = excluded.status,
+      paid_date                = excluded.paid_date,
+      updated_at               = datetime('now')
   `).run(
-    rep_id, month, quotes_given, closed_sales, recurring_closed,
+    rep_id, month, quotes_given, closed_sales, recurring_closed, weekly_biweekly_closed,
     close_rate, recurring_ratio, tier, bonus_amount, quarterly_bonus,
     payout_month, status, paid_date ?? null
   )

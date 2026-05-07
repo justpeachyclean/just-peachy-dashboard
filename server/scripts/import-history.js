@@ -103,9 +103,9 @@ async function importLeadSheets(wb) {
   }
 }
 
-// ─── DAILY FOCUS SHEETS (daily RGE, revenue, absences, cancellations) ─────────
+// ─── DAILY FOCUS SHEETS (daily RGE entries + monthly totals from Total column) ──
 async function importDailyFocus(wb) {
-  console.log('\n── Daily Focus Sheets (per-day entries) ──')
+  console.log('\n── Daily Focus Sheets ──')
 
   const SHEETS = {
     'Daily Focus January 2026': '2026-01',
@@ -115,23 +115,21 @@ async function importDailyFocus(wb) {
     'Daily Focus May 2026':     '2026-05',
   }
 
-  // Row indices in the new format
+  // Row indices
   const R = {
-    rec_clients:  1,
-    leads:        2,
-    leads_quoted: 3,
-    leads_conv:   5,
-    initial:      7,
-    retained:     9,
-    new_recurring:11,
-    absences:    13,
-    complaints:  14,
-    cancellations:15,
-    daily_rev:   20,
-    rge:         27,
-    rev_goal:    28,
-    stretch:     29,
-    marketing:   36,
+    rec_clients:   1,
+    leads:         2,
+    leads_quoted:  3,
+    leads_conv:    5,
+    initial:       7,
+    retained:      9,   // clients from initial who became recurring
+    new_recurring: 11,
+    absences:      13,
+    complaints:    14,
+    cancellations: 15,
+    daily_rev:     20,
+    rge:           27,
+    marketing:     36,
   }
 
   const monthlyTotals = {}
@@ -142,46 +140,48 @@ async function importDailyFocus(wb) {
 
     const rows = xlsx.utils.sheet_to_json(sheet, { header: 1, defval: null })
     const headerRow = rows[0] || []
+    const totalCol = headerRow.length - 1  // last col = "Total"
     const [yr, mo] = monthCode.split('-').map(Number)
     const daysInMonth = new Date(yr, mo, 0).getDate()
 
-    let imported = 0
-    let lastRecClients = null
-    let totalCancellations = 0
-    let totalInitialCleans = 0
-    let totalRevenue = 0
-    let totalMarketing = 0
+    // ── Monthly totals from the spreadsheet's own Total column ──
+    const num = (rowIdx) => {
+      const v = rows[rowIdx]?.[totalCol]
+      return typeof v === 'number' ? v : null
+    }
+    // For rec_clients use the last non-null value (end-of-month snapshot)
+    const recClientsRow = rows[R.rec_clients] || []
+    const lastRecClients = [...recClientsRow].reverse().find(v => typeof v === 'number') ?? null
 
-    // Col index = day + 2 (col 3 = day 1, col 4 = day 2, ...)
-    // Header values confirm: col N has header value N-2
+    monthlyTotals[monthCode] = {
+      leads_in:         num(R.leads),
+      leads_quoted:     num(R.leads_quoted),
+      leads_closed:     num(R.leads_conv),
+      recurring_closed: num(R.new_recurring),
+      initial_cleans:   num(R.initial),
+      retained:         num(R.retained),
+      complaints:       num(R.complaints),
+      revenue:          num(R.daily_rev),
+      marketing_spend:  num(R.marketing),
+      recurring_clients: lastRecClients,
+    }
+
+    // ── Per-day manual_entries for RGE / absences ──
+    let imported = 0
     for (let col = 3; col < headerRow.length - 1; col++) {
       const dayNum = headerRow[col]
-      if (typeof dayNum !== 'number') continue
-      if (dayNum < 1 || dayNum > daysInMonth) continue
+      if (typeof dayNum !== 'number' || dayNum < 1 || dayNum > daysInMonth) continue
 
-      const rge   = rows[R.rge]?.[col]
-      const abs   = rows[R.absences]?.[col]
-      const mkt   = rows[R.marketing]?.[col]
-      const rev   = rows[R.daily_rev]?.[col]
-      const canc  = rows[R.cancellations]?.[col]
-      const init  = rows[R.initial]?.[col]
-      const recC  = rows[R.rec_clients]?.[col]
+      const rge = rows[R.rge]?.[col]
+      const abs = rows[R.absences]?.[col]
+      const mkt = rows[R.marketing]?.[col]
 
       const hasData = (typeof rge === 'number' && rge > 0)
                    || (typeof abs === 'number' && abs > 0)
                    || (typeof mkt === 'number' && mkt > 0)
-                   || (typeof rev === 'number' && rev > 0)
       if (!hasData) continue
 
-      if (typeof recC === 'number') lastRecClients = recC
-      if (typeof canc === 'number') totalCancellations += canc
-      if (typeof init === 'number') totalInitialCleans += init
-      if (typeof rev  === 'number' && rev > 0) totalRevenue += rev
-      if (typeof mkt  === 'number' && mkt > 0) totalMarketing += mkt
-
-      const dayStr = String(dayNum).padStart(2, '0')
-      const entryDate = `${yr}-${String(mo).padStart(2,'0')}-${dayStr}`
-
+      const entryDate = `${yr}-${String(mo).padStart(2,'0')}-${String(dayNum).padStart(2,'0')}`
       try {
         await post('/api/entry/manual', {
           entry_date: entryDate,
@@ -196,15 +196,8 @@ async function importDailyFocus(wb) {
       }
     }
 
-    monthlyTotals[monthCode] = {
-      recurring_clients: lastRecClients,
-      cancellations: Math.round(totalCancellations),
-      initial_cleans: Math.round(totalInitialCleans),
-      revenue: totalRevenue > 0 ? Math.round(totalRevenue * 100) / 100 : null,
-      marketing_spend: totalMarketing > 0 ? Math.round(totalMarketing * 100) / 100 : null,
-    }
-
-    console.log(`  ✓ ${monthCode}: ${imported} days  rec_clients=${lastRecClients}  cancellations=${totalCancellations}  rev=$${totalRevenue.toFixed(0)}`)
+    const t = monthlyTotals[monthCode]
+    console.log(`  ✓ ${monthCode}: ${imported} days  leads=${t.leads_in}  closed=${t.leads_closed}  retained=${t.retained}  rec_clients=${lastRecClients}  rev=$${t.revenue ?? 0}`)
   }
 
   return monthlyTotals
@@ -236,6 +229,7 @@ async function importBonusRecords(repId, salesByMonth) {
 
   const wb = xlsx.readFile(path.join(DOWNLOADS, 'Sales Bonus Tracker (1).xlsx'))
   const ONE_TIME_WORDS = ['one time', 'single', 'on demand', '1x', 'one-time']
+  const WB_WORDS = ['weekly', 'biweekly', 'bi-weekly', 'bi weekly', 'every week', 'every 2']
 
   const accum = {}
 
@@ -259,7 +253,7 @@ async function importBonusRecords(repId, salesByMonth) {
     const freqIdx = headers.findIndex(h => h.includes('frequency'))
     const paidIdx = headers.findIndex(h => h === 'paid')
 
-    if (!accum[monthCode]) accum[monthCode] = { total: 0, recurring: 0 }
+    if (!accum[monthCode]) accum[monthCode] = { total: 0, recurring: 0, weekly_biweekly: 0 }
 
     for (let i = headerIdx + 1; i < data.length; i++) {
       const row = data[i]
@@ -274,11 +268,14 @@ async function importBonusRecords(repId, salesByMonth) {
         ? String(row[freqIdx]).toLowerCase().trim()
         : ''
       const isOneTime = ONE_TIME_WORDS.some(w => freq.includes(w)) || freq === ''
-      if (!isOneTime) accum[monthCode].recurring++
+      if (!isOneTime) {
+        accum[monthCode].recurring++
+        if (WB_WORDS.some(w => freq.includes(w))) accum[monthCode].weekly_biweekly++
+      }
     }
   }
 
-  for (const [month, { total, recurring }] of Object.entries(accum)) {
+  for (const [month, { total, recurring, weekly_biweekly }] of Object.entries(accum)) {
     if (total === 0) continue
     const sales = salesByMonth[month]
     const quotesGiven = sales?.leads_quoted || total
@@ -290,9 +287,10 @@ async function importBonusRecords(repId, salesByMonth) {
         quotes_given: quotesGiven,
         closed_sales: total,
         recurring_closed: recurring,
+        weekly_biweekly_closed: weekly_biweekly,
       })
       const streak = r.quarterly_bonus ? ` + $${r.quarterly_bonus} streak bonus` : ''
-      console.log(`  ✓ ${month}: ${total} sales (${recurring} recurring) → Tier ${r.tier}, $${r.bonus_amount}${streak}`)
+      console.log(`  ✓ ${month}: ${total} sales (${recurring} recurring, ${weekly_biweekly} W/BW) → Tier ${r.tier}, $${r.bonus_amount}${streak}`)
     } catch (e) {
       console.error(`  ✗ ${month}:`, e.message)
     }
@@ -334,19 +332,19 @@ async function main() {
     const existing = existingByMonth[month] || {}
     const merged = {
       month,
-      leads_in:         existing.leads_in         || 0,
-      leads_quoted:     existing.leads_quoted      || 0,
-      leads_closed:     existing.leads_closed      || 0,
-      recurring_closed: existing.recurring_closed  || 0,
-      move_out_cleans:  existing.move_out_cleans   || 0,
-      retained:         existing.retained          || 0,
-      skips:            existing.skips             || 0,
-      complaints:       existing.complaints        || 0,
+      leads_in:         totals.leads_in         ?? existing.leads_in         ?? 0,
+      leads_quoted:     totals.leads_quoted      ?? existing.leads_quoted     ?? 0,
+      leads_closed:     totals.leads_closed      ?? existing.leads_closed     ?? 0,
+      recurring_closed: totals.recurring_closed  ?? existing.recurring_closed ?? 0,
+      initial_cleans:   totals.initial_cleans    ?? existing.initial_cleans   ?? 0,
+      retained:         totals.retained          ?? existing.retained         ?? 0,
+      complaints:       totals.complaints        ?? existing.complaints       ?? 0,
+      move_out_cleans:  existing.move_out_cleans || 0,
+      skips:            existing.skips           || 0,
       recurring_clients: totals.recurring_clients ?? existing.recurring_clients ?? null,
-      cancellations:    cancByMonth[month] ?? existing.cancellations ?? 0,
-      initial_cleans:   totals.initial_cleans > 0 ? totals.initial_cleans : (existing.initial_cleans || 0),
-      revenue:          totals.revenue ?? existing.revenue ?? 0,
-      marketing_spend:  totals.marketing_spend ?? existing.marketing_spend ?? null,
+      cancellations:    cancByMonth[month]        ?? existing.cancellations   ?? 0,
+      revenue:          totals.revenue            ?? existing.revenue         ?? 0,
+      marketing_spend:  totals.marketing_spend    ?? existing.marketing_spend ?? null,
     }
     try {
       await post('/api/sales', merged)

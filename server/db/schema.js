@@ -112,6 +112,60 @@ CREATE TABLE IF NOT EXISTS monthly_sales (
   updated_at          TEXT DEFAULT (datetime('now'))
 );
 
+-- Cancelled clients with standardized reason codes
+CREATE TABLE IF NOT EXISTS cancelled_clients (
+  id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+  client_id             TEXT,
+  client_name           TEXT,
+  cancel_date           TEXT NOT NULL,
+  reason_code           TEXT,
+  reason_label          TEXT,
+  reason_category       TEXT,
+  client_quote          TEXT,
+  save_attempted        INTEGER DEFAULT 0,
+  save_outcome          TEXT,
+  solution_offered      TEXT,
+  frequency             TEXT,
+  recurring_months      INTEGER,
+  revenue_lost_monthly  REAL,
+  notes                 TEXT,
+  source                TEXT DEFAULT 'manual',
+  raw_payload           TEXT,
+  created_at            TEXT DEFAULT (datetime('now'))
+);
+
+-- Client feedback / scorecards
+CREATE TABLE IF NOT EXISTS client_feedback (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  client_id     TEXT,
+  client_name   TEXT,
+  feedback_date TEXT NOT NULL,
+  rating        INTEGER,
+  feedback_type TEXT DEFAULT 'survey',
+  comment       TEXT,
+  tech_name     TEXT,
+  source        TEXT DEFAULT 'manual',
+  raw_payload   TEXT,
+  created_at    TEXT DEFAULT (datetime('now'))
+);
+
+-- Client nurture follow-up tracking (auto-populated from T-coded cancellations)
+CREATE TABLE IF NOT EXISTS client_nurture (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  cancelled_id    INTEGER REFERENCES cancelled_clients(id),
+  client_id       TEXT,
+  client_name     TEXT,
+  reason_code     TEXT,
+  cancel_date     TEXT,
+  next_contact    TEXT,
+  status          TEXT DEFAULT 'pending',
+  contact_notes   TEXT,
+  won_back        INTEGER DEFAULT 0,
+  won_back_date   TEXT,
+  created_at      TEXT DEFAULT (datetime('now')),
+  updated_at      TEXT DEFAULT (datetime('now'))
+);
+
 -- Audit log
 CREATE TABLE IF NOT EXISTS audit_log (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,

@@ -17,6 +17,10 @@ app.use('/api/webhook',        require('./routes/webhooks'))
 app.use('/api/data',           require('./routes/data'))
 app.use('/api/bonus',          require('./routes/bonus'))
 app.use('/api/leads',          require('./routes/leads'))
+app.use('/api/expenses',       require('./routes/expenses'))
+app.use('/api/cancellations',  require('./routes/cancellations'))
+app.use('/api/nurture',        require('./routes/nurture'))
+app.use('/api/feedback',       require('./routes/feedback'))
 
 // Health check
 app.get('/api/health', (req, res) => {

@@ -392,10 +392,25 @@ router.get('/hiring', (req, res) => {
   const rampUpCost = rampDays && breakEvenDaily ? rampDays * breakEvenDaily : null
   const costPerTurnover = trainingCostPerHire && rampUpCost ? trainingCostPerHire + rampUpCost : null
 
+  // Recruiting spend from QB expenses
+  const recruitCategory = cfg.qb_recruiting_category || 'Recruiting'
+  const recruitingSpendYTD = db.prepare(`
+    SELECT COALESCE(SUM(amount), 0) AS total
+    FROM quickbooks_expenses WHERE month LIKE ? AND category = ?
+  `).get(`${year}-%`, recruitCategory).total || 0
+
+  const ytdNewHires = result.reduce((sum, m) => sum + m.new_hires, 0)
+  const costPerHire = ytdNewHires > 0 && recruitingSpendYTD > 0
+    ? Math.round(recruitingSpendYTD / ytdNewHires)
+    : null
+
   res.json({
     year,
     months: result,
     cost_per_turnover: costPerTurnover,
+    recruiting_spend_ytd: recruitingSpendYTD,
+    cost_per_hire: costPerHire,
+    ytd_new_hires: ytdNewHires,
     inputs: { training_hours: trainingHours, hourly_cost: hourlyCost, ramp_days: rampDays, break_even_daily: breakEvenDaily },
   })
 })

@@ -6,6 +6,9 @@ const tabs = [
   { path: '/bonus', label: 'Bonus Tracker' },
   { path: '/economics', label: 'Unit Economics' },
   { path: '/leads', label: 'Client Log' },
+  { path: '/cancellations', label: 'Cancellations' },
+  { path: '/nurture', label: 'Nurture' },
+  { path: '/feedback', label: 'Feedback' },
   { path: '/hiring', label: 'Hiring' },
   { path: '/connections', label: 'Connections' },
 ]

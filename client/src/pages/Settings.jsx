@@ -1,5 +1,138 @@
 import { useState, useEffect } from 'react'
 
+const MONTH_LABELS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+
+function MonthlySpend({ marketingCategory, recruitingCategory }) {
+  const [year, setYear] = useState(new Date().getFullYear())
+  const [spend, setSpend] = useState({})
+  const [status, setStatus] = useState(null)
+  const currentYear = new Date().getFullYear()
+  const currentMonth = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`
+
+  useEffect(() => {
+    fetch(`/api/expenses?year=${year}`)
+      .then(r => r.json())
+      .then(rows => {
+        const s = {}
+        rows.forEach(r => {
+          if (!s[r.month]) s[r.month] = {}
+          if (r.category === marketingCategory) s[r.month].marketing = r.amount
+          if (r.category === recruitingCategory) s[r.month].recruiting = r.amount
+        })
+        setSpend(s)
+      })
+  }, [year, marketingCategory, recruitingCategory])
+
+  const months = Array.from({ length: 12 }, (_, i) => {
+    const m = String(i + 1).padStart(2, '0')
+    return `${year}-${m}`
+  })
+
+  const setField = (month, field, val) =>
+    setSpend(prev => ({ ...prev, [month]: { ...prev[month], [field]: val } }))
+
+  const handleSave = async () => {
+    setStatus('saving')
+    try {
+      for (const month of months) {
+        const s = spend[month] || {}
+        if (s.marketing !== undefined && s.marketing !== '') {
+          await fetch('/api/expenses', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ month, category: marketingCategory, amount: parseFloat(s.marketing) || 0 }),
+          })
+        }
+        if (s.recruiting !== undefined && s.recruiting !== '') {
+          await fetch('/api/expenses', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ month, category: recruitingCategory, amount: parseFloat(s.recruiting) || 0 }),
+          })
+        }
+      }
+      setStatus('saved')
+      setTimeout(() => setStatus(null), 3000)
+    } catch {
+      setStatus('error')
+    }
+  }
+
+  const years = Array.from({ length: 4 }, (_, i) => currentYear - 1 + i)
+
+  return (
+    <div className="card">
+      <div className="flex items-center justify-between mb-1 pb-2 border-b border-gray-100">
+        <h2 className="text-sm font-semibold text-sage uppercase tracking-wider">Monthly Spend</h2>
+        <select
+          className="form-input py-1 px-2 text-sm w-24"
+          value={year}
+          onChange={e => setYear(parseInt(e.target.value))}
+        >
+          {years.map(y => <option key={y} value={y}>{y}</option>)}
+        </select>
+      </div>
+      <p className="text-xs text-gray-400 mb-4 mt-3">Actual spend per month — used for CAC, cost-per-lead, and cost-per-hire calculations.</p>
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-xs text-gray-400 uppercase tracking-wide border-b border-gray-100">
+              <th className="text-left pb-2 font-medium pr-4">Month</th>
+              <th className="text-left pb-2 font-medium pr-4">Marketing</th>
+              <th className="text-left pb-2 font-medium">Recruiting</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-50">
+            {months.map((month, i) => {
+              const isFuture = month > currentMonth
+              const s = spend[month] || {}
+              return (
+                <tr key={month} className={isFuture ? 'opacity-40' : ''}>
+                  <td className="py-1.5 pr-4 font-medium text-ink w-12">{MONTH_LABELS[i]}</td>
+                  <td className="py-1.5 pr-3">
+                    <div className="relative">
+                      <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 text-xs">$</span>
+                      <input
+                        type="number" step="0.01" min="0"
+                        className="form-input pl-6 py-1 text-sm"
+                        value={s.marketing ?? ''}
+                        onChange={e => setField(month, 'marketing', e.target.value)}
+                        disabled={isFuture}
+                        placeholder="0"
+                      />
+                    </div>
+                  </td>
+                  <td className="py-1.5">
+                    <div className="relative">
+                      <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 text-xs">$</span>
+                      <input
+                        type="number" step="0.01" min="0"
+                        className="form-input pl-6 py-1 text-sm"
+                        value={s.recruiting ?? ''}
+                        onChange={e => setField(month, 'recruiting', e.target.value)}
+                        disabled={isFuture}
+                        placeholder="0"
+                      />
+                    </div>
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+      <div className="flex items-center justify-between mt-4 pt-3 border-t border-gray-100">
+        {status === 'saved' && <span className="text-ok text-sm font-medium">✓ Spend saved</span>}
+        {status === 'error' && <span className="text-danger text-sm font-medium">✗ Error saving</span>}
+        {!status && <span />}
+        <button type="button" onClick={handleSave} className="btn-primary text-sm" disabled={status === 'saving'}>
+          {status === 'saving' ? 'Saving…' : 'Save Spend'}
+        </button>
+      </div>
+    </div>
+  )
+}
+
 const FIELDS = [
   {
     section: 'Revenue Targets',
@@ -134,6 +267,13 @@ export default function Settings() {
           </button>
         </div>
       </form>
+
+      <div className="mt-5">
+        <MonthlySpend
+          marketingCategory={values.qb_marketing_category || 'Advertising'}
+          recruitingCategory={values.qb_recruiting_category || 'Recruiting'}
+        />
+      </div>
     </div>
   )
 }

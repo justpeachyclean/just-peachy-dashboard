@@ -56,7 +56,7 @@ export default function Hiring() {
     </div>
   )
 
-  const { months, cost_per_turnover, inputs } = data
+  const { months, cost_per_turnover, recruiting_spend_ytd, cost_per_hire, inputs } = data
   const now = new Date()
   const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
 
@@ -130,6 +130,34 @@ export default function Hiring() {
               />
               <StatCard label="Total Call-Ins" value={fmtN(totalCallIns)} color="text-warn" />
             </div>
+            {(recruiting_spend_ytd > 0 || cost_per_hire !== null) && (
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 pt-4 border-t border-gray-100">
+                <StatCard
+                  label="Recruiting Spend YTD"
+                  value={fmt$(recruiting_spend_ytd)}
+                  color="text-ink"
+                />
+                <StatCard
+                  label="Cost Per Hire"
+                  value={cost_per_hire !== null ? fmt$(cost_per_hire) : '—'}
+                  sub={cost_per_hire !== null ? `${totalHires} hire${totalHires !== 1 ? 's' : ''}` : 'Enter recruiting spend in Settings'}
+                  color="text-ink"
+                />
+                {cost_per_turnover !== null && cost_per_hire !== null && (
+                  <StatCard
+                    label="Total Cost Per Hire + Turnover"
+                    value={fmt$(cost_per_hire + cost_per_turnover)}
+                    sub="Recruiting + training + ramp-up"
+                    color="text-ink"
+                  />
+                )}
+              </div>
+            )}
+            {recruiting_spend_ytd === 0 && (
+              <p className="text-xs text-gray-400 text-center pt-3 border-t border-gray-100">
+                Add recruiting spend in <Link to="/settings" className="text-brand underline">Settings → Monthly Spend</Link> to see cost-per-hire.
+              </p>
+            )}
             {turnoverCostTotal !== null && (
               <div className="bg-danger/5 border border-danger/15 rounded-xl px-4 py-3 text-sm text-center">
                 <span className="text-gray-500">Estimated turnover cost YTD: </span>

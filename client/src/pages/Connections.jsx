@@ -106,6 +106,29 @@ export default function Connections() {
     { field: 'event_date', values: 'YYYY-MM-DD (defaults to today)', required: false },
   ]
 
+  const cancelFields = [
+    { field: 'client_id', values: 'MaidCentral Client ID', required: false },
+    { field: 'client_name', values: 'Client full name', required: false },
+    { field: 'cancel_date', values: 'YYYY-MM-DD (defaults to today)', required: false },
+    { field: 'reason_code', values: 'Q1–Q5 · S1–S5 · P1–P5 · L1–L5 · C1–C5 · T1–T5 · O1–O5', required: false },
+    { field: 'client_quote', values: "Client's exact words (short quote)", required: false },
+    { field: 'save_attempted', values: 'true / false', required: false },
+    { field: 'save_outcome', values: 'Lost · Saved · Paused', required: false },
+    { field: 'solution_offered', values: 'Tech swap / Reclean / Price explanation / etc.', required: false },
+    { field: 'frequency', values: 'weekly · biweekly · monthly', required: false },
+    { field: 'revenue_lost_monthly', values: 'Monthly revenue amount (number)', required: false },
+  ]
+
+  const feedbackFields = [
+    { field: 'client_id', values: 'MaidCentral Client ID', required: false },
+    { field: 'client_name', values: 'Client full name', required: false },
+    { field: 'feedback_date', values: 'YYYY-MM-DD (defaults to today)', required: false },
+    { field: 'rating', values: '1–5 (integer)', required: false },
+    { field: 'feedback_type', values: 'survey · review · nps · complaint · compliment', required: false },
+    { field: 'comment', values: "Client's verbatim comment", required: false },
+    { field: 'tech_name', values: 'Cleaner / tech name', required: false },
+  ]
+
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
@@ -303,6 +326,144 @@ export default function Connections() {
                       {f.required
                         ? <span className="text-danger font-semibold">Yes</span>
                         : <span className="text-gray-300">No</span>}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </details>
+      </div>
+
+      {/* Cancellation Zap */}
+      <div className="card mb-5">
+        <div className="flex items-center gap-3 mb-4">
+          <span className="text-xl">🚫</span>
+          <div>
+            <h2 className="font-semibold text-ink">MaidCentral Cancellation → Dashboard</h2>
+            <p className="text-xs text-gray-400">Auto-logs cancelled clients with reason codes; T-codes go to Nurture queue</p>
+          </div>
+          <div className="ml-auto flex items-center gap-2">
+            <StatusDot count={counts.cancellations} />
+            <button
+              onClick={() => sendTest('cancellation')}
+              disabled={testing.cancellation}
+              className="text-xs border border-gray-200 bg-white px-3 py-1.5 rounded-lg hover:bg-gray-50 font-medium text-gray-600 transition-colors"
+            >
+              {testing.cancellation ? 'Sending…' : 'Send Test'}
+            </button>
+            {testResults.cancellation === 'ok' && <span className="text-xs text-ok font-semibold">✓ Working</span>}
+            {testResults.cancellation === 'error' && <span className="text-xs text-danger font-semibold">✗ Failed</span>}
+          </div>
+        </div>
+
+        <div className="mb-4">
+          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Webhook URL</p>
+          <div className="flex items-center gap-2 bg-gray-50 border border-gray-100 rounded-lg px-3 py-2">
+            <code className="flex-1 text-xs font-mono text-ink truncate">{webhookUrl('cancellation')}</code>
+            <CopyButton text={webhookUrl('cancellation')} />
+          </div>
+        </div>
+
+        <details className="group">
+          <summary className="text-xs font-semibold text-sage cursor-pointer hover:text-sagehover select-none">
+            Field mapping &amp; Zapier steps ▸
+          </summary>
+          <div className="mt-3 space-y-3">
+            <div className="bg-brand/5 border border-brand/10 rounded-xl p-4 text-xs">
+              <p className="font-semibold text-ink mb-2">Zapier setup:</p>
+              <ol className="space-y-1 text-gray-600 list-decimal list-inside">
+                <li>Trigger = <strong>MaidCentral → Client Status Changed</strong> (filter: status = Cancelled)</li>
+                <li>Action = <strong>Webhooks by Zapier → POST</strong></li>
+                <li>URL = cancellation webhook above. Header: <code className="bg-white px-1 rounded">X-Webhook-Secret</code></li>
+                <li>Map the fields below. <strong>Tip:</strong> Add a custom field in MC for "Reason Code" so your team picks the code at cancellation time — this is the key to clean data.</li>
+              </ol>
+              <p className="text-gray-500 mt-2">T-coded cancellations (T1–T5) are automatically added to the Nurture queue with a 30-day follow-up.</p>
+            </div>
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="text-gray-400 border-b border-gray-100">
+                  <th className="text-left py-1.5 pr-3 font-medium">JSON field</th>
+                  <th className="text-left py-1.5 pr-3 font-medium">Value / MC field to map</th>
+                  <th className="text-left py-1.5 font-medium">Required</th>
+                </tr>
+              </thead>
+              <tbody>
+                {cancelFields.map(f => (
+                  <tr key={f.field} className="border-b border-gray-50">
+                    <td className="py-1.5 pr-3"><code className="bg-gray-100 px-1 rounded">{f.field}</code></td>
+                    <td className="py-1.5 pr-3 text-gray-600">{f.values}</td>
+                    <td className="py-1.5">
+                      {f.required ? <span className="text-danger font-semibold">Yes</span> : <span className="text-gray-300">No</span>}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </details>
+      </div>
+
+      {/* Feedback Zap */}
+      <div className="card mb-5">
+        <div className="flex items-center gap-3 mb-4">
+          <span className="text-xl">⭐</span>
+          <div>
+            <h2 className="font-semibold text-ink">Client Feedback / Scorecards → Dashboard</h2>
+            <p className="text-xs text-gray-400">MC review requests, GHL surveys, or any scorecard source</p>
+          </div>
+          <div className="ml-auto flex items-center gap-2">
+            <StatusDot count={counts.feedback} />
+            <button
+              onClick={() => sendTest('feedback')}
+              disabled={testing.feedback}
+              className="text-xs border border-gray-200 bg-white px-3 py-1.5 rounded-lg hover:bg-gray-50 font-medium text-gray-600 transition-colors"
+            >
+              {testing.feedback ? 'Sending…' : 'Send Test'}
+            </button>
+            {testResults.feedback === 'ok' && <span className="text-xs text-ok font-semibold">✓ Working</span>}
+            {testResults.feedback === 'error' && <span className="text-xs text-danger font-semibold">✗ Failed</span>}
+          </div>
+        </div>
+
+        <div className="mb-4">
+          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Webhook URL</p>
+          <div className="flex items-center gap-2 bg-gray-50 border border-gray-100 rounded-lg px-3 py-2">
+            <code className="flex-1 text-xs font-mono text-ink truncate">{webhookUrl('feedback')}</code>
+            <CopyButton text={webhookUrl('feedback')} />
+          </div>
+        </div>
+
+        <details className="group">
+          <summary className="text-xs font-semibold text-sage cursor-pointer hover:text-sagehover select-none">
+            Field mapping &amp; Zapier steps ▸
+          </summary>
+          <div className="mt-3 space-y-3">
+            <div className="bg-brand/5 border border-brand/10 rounded-xl p-4 text-xs">
+              <p className="font-semibold text-ink mb-2">Zapier setup (two options):</p>
+              <p className="text-gray-600 mb-1"><strong>Option A — MC Review Request response:</strong> Trigger = MaidCentral → Review Response Received. Map rating + comment.</p>
+              <p className="text-gray-600 mb-2"><strong>Option B — GHL Survey form:</strong> Trigger = GHL → Form Submitted (select your survey form). Map rating field + comment field.</p>
+              <ol className="space-y-1 text-gray-600 list-decimal list-inside">
+                <li>Action = <strong>Webhooks by Zapier → POST</strong></li>
+                <li>URL = feedback webhook above. Header: <code className="bg-white px-1 rounded">X-Webhook-Secret</code></li>
+                <li>Map the fields below</li>
+              </ol>
+            </div>
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="text-gray-400 border-b border-gray-100">
+                  <th className="text-left py-1.5 pr-3 font-medium">JSON field</th>
+                  <th className="text-left py-1.5 pr-3 font-medium">Value / source field</th>
+                  <th className="text-left py-1.5 font-medium">Required</th>
+                </tr>
+              </thead>
+              <tbody>
+                {feedbackFields.map(f => (
+                  <tr key={f.field} className="border-b border-gray-50">
+                    <td className="py-1.5 pr-3"><code className="bg-gray-100 px-1 rounded">{f.field}</code></td>
+                    <td className="py-1.5 pr-3 text-gray-600">{f.values}</td>
+                    <td className="py-1.5">
+                      {f.required ? <span className="text-danger font-semibold">Yes</span> : <span className="text-gray-300">No</span>}
                     </td>
                   </tr>
                 ))}

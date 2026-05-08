@@ -62,12 +62,20 @@ function exportCsv(filename, rows) {
   a.click()
 }
 
+const VISITS = { weekly: 52, biweekly: 26, 'bi-weekly': 26, monthly: 13, 'every 4 weeks': 13, one_time: 1, 'one time': 1, 'one-time': 1, 'tri-weekly': 17 }
+
+function calcAnnual(price, frequency) {
+  if (!price || !frequency) return null
+  const mult = VISITS[frequency.toLowerCase().trim()]
+  if (!mult) return null
+  return Math.round(parseFloat(price) * mult)
+}
+
 const BLANK_FORM = {
   record_date: new Date().toISOString().slice(0, 10),
   rep_name: 'Lexi',
   client_name: '',
   frequency: '',
-  quote_amount: '',
   price_per_clean: '',
   converted: false,
   recurring_retained: false,
@@ -88,7 +96,6 @@ export default function Leads() {
   const [editId, setEditId] = useState(null)
   const [form, setForm] = useState(BLANK_FORM)
   const [saving, setSaving] = useState(false)
-  const [pricingSet, setPricingSet] = useState(true)
 
   const load = () => {
     const params = new URLSearchParams({ year: filter.year, limit: 2000 })
@@ -97,12 +104,6 @@ export default function Leads() {
       .then(r => r.json())
       .then(data => {
         setLeads(data)
-        if (data.some(r => r.converted && r.annual_value == null && r.frequency &&
-            !['one_time','one time','one-time'].includes(r.frequency.toLowerCase()))) {
-          setPricingSet(false)
-        } else {
-          setPricingSet(true)
-        }
       })
   }
 
@@ -118,8 +119,7 @@ export default function Leads() {
       rep_name:           r.rep_name || '',
       client_name:        r.client_name || '',
       frequency:          r.frequency || '',
-      quote_amount:       r.quote_amount ?? '',
-      price_per_clean:    r.price_per_clean ?? '',
+      price_per_clean:    r.price_per_clean ?? r.quote_amount ?? '',
       converted:          !!r.converted,
       recurring_retained: !!r.recurring_retained,
       lead_source:        r.lead_source || '',
@@ -133,10 +133,11 @@ export default function Leads() {
   const save = async e => {
     e.preventDefault()
     setSaving(true)
+    const cleanPrice = form.price_per_clean ? parseFloat(form.price_per_clean) : null
     const payload = {
       ...form,
-      quote_amount:    form.quote_amount    ? parseFloat(form.quote_amount)    : null,
-      price_per_clean: form.price_per_clean ? parseFloat(form.price_per_clean) : null,
+      quote_amount:    cleanPrice,
+      price_per_clean: cleanPrice,
       converted:          form.converted          ? 1 : 0,
       recurring_retained: form.recurring_retained ? 1 : 0,
       source: 'manual',
@@ -200,15 +201,6 @@ export default function Leads() {
         </div>
       </div>
 
-      {!pricingSet && (
-        <div className="flex items-start gap-2 bg-warn/5 border border-warn/20 rounded-xl px-4 py-3 text-xs text-gray-500 mb-5">
-          <span className="text-warn mt-0.5">⚠</span>
-          <span>
-            Annual values need avg clean prices —{' '}
-            <Link to="/settings" className="text-brand underline">Settings → Client Pricing</Link>
-          </span>
-        </div>
-      )}
 
       {/* Summary row */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-5">
@@ -338,10 +330,28 @@ export default function Leads() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Estimate Given ($)</label>
-                  <input type="number" min="0" step="0.01" className="form-input" placeholder="e.g. 185" value={f(form.quote_amount)} onChange={set('quote_amount')} />
+                  <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Price Per Clean ($)</label>
+                  <input type="number" min="0" step="0.01" className="form-input" placeholder="e.g. 185" value={f(form.price_per_clean)} onChange={set('price_per_clean')} />
                 </div>
               </div>
+              {/* Live annual value preview */}
+              {form.price_per_clean && form.frequency && (() => {
+                const annual = calcAnnual(form.price_per_clean, form.frequency)
+                const freq = form.frequency.toLowerCase().trim()
+                const isOneTime = ['one_time','one time','one-time'].includes(freq)
+                const mult = VISITS[freq]
+                if (!annual) return null
+                return (
+                  <div className="flex items-center gap-2 px-3 py-2 bg-brand/5 border border-brand/15 rounded-lg text-sm">
+                    <span className="text-brand font-bold text-base">{fmt$(annual)}</span>
+                    <span className="text-gray-500">
+                      {isOneTime
+                        ? 'one-time service'
+                        : `annual value · ${fmt$(parseFloat(form.price_per_clean))} × ${mult} visits/yr`}
+                    </span>
+                  </div>
+                )
+              })()}
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Lead Source</label>

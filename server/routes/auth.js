@@ -1,7 +1,7 @@
 const express = require('express')
 const router = express.Router()
 const db = require('../db')
-const { checkPassword, makeToken } = require('../lib/auth')
+const { checkPassword, makeToken, hashPassword } = require('../lib/auth')
 
 // GET /api/auth/status
 router.get('/status', (req, res) => {
@@ -19,6 +19,29 @@ router.post('/login', (req, res) => {
   }
   db.prepare(`UPDATE users SET last_login = datetime('now') WHERE id = ?`).run(user.id)
   res.json({ ok: true, token: makeToken(user), user: { id: user.id, username: user.username, display_name: user.display_name, role: user.role } })
+})
+
+// POST /api/auth/reset-admin  — emergency admin password reset, requires webhook secret
+// Body: { new_password: "..." }  Header: x-webhook-secret: <secret>
+router.post('/reset-admin', (req, res) => {
+  const secret = db.prepare("SELECT value FROM settings WHERE key='webhook_secret'").get()?.value
+  const provided = req.headers['x-webhook-secret']
+  if (!secret || !provided || provided !== secret) {
+    return res.status(403).json({ error: 'Forbidden — invalid webhook secret' })
+  }
+  const { new_password } = req.body || {}
+  if (!new_password || new_password.length < 4) return res.status(400).json({ error: 'new_password required (min 4 chars)' })
+
+  const existing = db.prepare("SELECT id FROM users WHERE username = 'admin' COLLATE NOCASE").get()
+  if (existing) {
+    db.prepare("UPDATE users SET password_hash = ?, active = 1 WHERE username = 'admin' COLLATE NOCASE")
+      .run(hashPassword(new_password))
+  } else {
+    db.prepare("INSERT INTO users (username, display_name, role, password_hash) VALUES ('admin','Admin','admin',?)")
+      .run(hashPassword(new_password))
+  }
+  console.log('🔐 Admin password reset via /api/auth/reset-admin')
+  res.json({ ok: true, message: 'Admin password updated. Log in with username: admin' })
 })
 
 module.exports = router

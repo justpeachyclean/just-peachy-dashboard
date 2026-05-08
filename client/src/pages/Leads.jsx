@@ -93,6 +93,7 @@ export default function Leads() {
     month: String(new Date().getMonth() + 1).padStart(2, '0'),
     converted: 'all',
   })
+  const [search, setSearch] = useState('')
   const [showForm, setShowForm] = useState(false)
   const [editId, setEditId] = useState(null)
   const [form, setForm] = useState(BLANK_FORM)
@@ -161,10 +162,16 @@ export default function Leads() {
     load()
   }
 
-  // Apply converted filter
+  // Apply filters: converted + search
   const visible = leads.filter(r => {
-    if (filter.converted === 'yes') return r.converted
-    if (filter.converted === 'no') return !r.converted
+    if (filter.converted === 'yes' && !r.converted) return false
+    if (filter.converted === 'no' && r.converted) return false
+    if (search.trim()) {
+      const q = search.trim().toLowerCase()
+      return (r.client_name || '').toLowerCase().includes(q) ||
+             (r.rep_name || '').toLowerCase().includes(q) ||
+             (r.notes || '').toLowerCase().includes(q)
+    }
     return true
   })
 
@@ -241,6 +248,16 @@ export default function Leads() {
           <option value="yes">Converted only</option>
           <option value="no">Not converted</option>
         </select>
+        <input
+          type="text"
+          className="form-input text-sm w-48"
+          placeholder="🔍 Search client name…"
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+        />
+        {search && (
+          <button onClick={() => setSearch('')} className="text-xs text-gray-400 hover:text-gray-600">✕ Clear</button>
+        )}
         <span className="text-sm text-gray-400">{visible.length} records</span>
       </div>
 

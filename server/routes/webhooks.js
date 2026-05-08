@@ -50,9 +50,13 @@ router.post('/ghl', (req, res) => {
     JSON.stringify(payload)
   )
 
-  // Auto-populate lead_records from GHL events
+  // Auto-populate lead_records from GHL events.
+  // Use opportunity_id as the dedup key (preferred over contact_id) so returning
+  // clients who already exist in GHL get a NEW lead record for each new opportunity.
   const clientName = payload.client_name || contact_id || null
   const month = eDate.slice(0, 7)
+  const extId = opportunity_id ?? contact_id ?? null
+  const usedBefore = payload.used_before ?? null  // pass 'Yes'/'No' from GHL custom field
 
   const NEW_LEAD_TYPES = ['new_lead', 'lead_in', 'lead_inquiry']
   const QUOTE_TYPES    = ['quote_sent', 'lead_quoted']
@@ -62,44 +66,48 @@ router.post('/ghl', (req, res) => {
   if (NEW_LEAD_TYPES.includes(event_type)) {
     db.prepare(`
       INSERT OR IGNORE INTO lead_records
-        (record_date, client_name, rep_name, frequency, month, converted, source, external_id)
-      VALUES (?, ?, ?, ?, ?, 0, 'ghl', ?)
-    `).run(eDate, clientName, rep_name ?? null, client_freq ?? null, month, contact_id ?? null)
+        (record_date, client_name, rep_name, frequency, month, converted, source, external_id, used_before)
+      VALUES (?, ?, ?, ?, ?, 0, 'ghl', ?, ?)
+    `).run(eDate, clientName, rep_name ?? null, client_freq ?? null, month, extId, usedBefore)
 
   } else if (QUOTE_TYPES.includes(event_type)) {
     db.prepare(`
       INSERT OR IGNORE INTO lead_records
-        (record_date, client_name, rep_name, frequency, month, converted, source, external_id)
-      VALUES (?, ?, ?, ?, ?, 0, 'ghl', ?)
-    `).run(eDate, clientName, rep_name ?? null, client_freq ?? null, month, contact_id ?? null)
+        (record_date, client_name, rep_name, frequency, month, converted, source, external_id, used_before)
+      VALUES (?, ?, ?, ?, ?, 0, 'ghl', ?, ?)
+    `).run(eDate, clientName, rep_name ?? null, client_freq ?? null, month, extId, usedBefore)
 
     const price = payload.price ?? payload.quote_amount ?? null
-    if (price != null && contact_id) {
-      db.prepare(`
-        UPDATE lead_records SET price_per_clean = ?, quote_amount = ?
-        WHERE external_id = ?
-      `).run(parseFloat(price), parseFloat(price), contact_id)
+    if (price != null && extId) {
+      db.prepare(`UPDATE lead_records SET price_per_clean = ?, quote_amount = ? WHERE external_id = ?`)
+        .run(parseFloat(price), parseFloat(price), extId)
     }
 
   } else if (WON_TYPES.includes(event_type)) {
+    // Create record if GHL only fires on won (skipped earlier stages)
     db.prepare(`
       INSERT OR IGNORE INTO lead_records
-        (record_date, client_name, rep_name, frequency, month, converted, source, external_id)
-      VALUES (?, ?, ?, ?, ?, 0, 'ghl', ?)
-    `).run(eDate, clientName, rep_name ?? null, client_freq ?? null, month, contact_id ?? null)
+        (record_date, client_name, rep_name, frequency, month, converted, source, external_id, used_before)
+      VALUES (?, ?, ?, ?, ?, 0, 'ghl', ?, ?)
+    `).run(eDate, clientName, rep_name ?? null, client_freq ?? null, month, extId, usedBefore)
 
-    if (contact_id) {
+    if (extId) {
+      const price = payload.price ?? payload.quote_amount ?? null
+      if (price != null) {
+        db.prepare(`UPDATE lead_records SET price_per_clean = ?, quote_amount = ? WHERE external_id = ?`)
+          .run(parseFloat(price), parseFloat(price), extId)
+      }
       db.prepare(`
         UPDATE lead_records SET
           converted = 1,
-          recurring_retained = CASE WHEN LOWER(COALESCE(frequency,'')) NOT IN ('one_time','one-time','one time','') THEN 1 ELSE 0 END
+          recurring_retained = CASE WHEN LOWER(COALESCE(frequency,'')) NOT IN ('one_type','one-time','one time','') THEN 1 ELSE 0 END
         WHERE external_id = ?
-      `).run(contact_id)
+      `).run(extId)
     }
 
   } else if (LOST_TYPES.includes(event_type)) {
-    if (contact_id) {
-      db.prepare(`UPDATE lead_records SET converted = 0 WHERE external_id = ?`).run(contact_id)
+    if (extId) {
+      db.prepare(`UPDATE lead_records SET converted = 0 WHERE external_id = ?`).run(extId)
     }
   }
 

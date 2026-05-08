@@ -48,6 +48,8 @@ function verifyToken(token) {
 }
 
 function authMiddleware(req, res, next) {
+  // Only protect API routes — let static files (React app, index.html) pass through freely
+  if (!req.path.startsWith('/api/')) return next()
   if (req.path.startsWith('/api/auth') || req.path.startsWith('/api/webhook') || req.path === '/api/health') return next()
   const hasUsers = db.prepare('SELECT COUNT(*) as n FROM users WHERE active=1').get().n > 0
   if (!hasUsers) return next()

@@ -48,6 +48,8 @@ export default function Connections() {
   const [testing, setTesting] = useState({})
   const [testResults, setTestResults] = useState({})
   const [autoRefresh, setAutoRefresh] = useState(false)
+  const [seeding, setSeeding] = useState(false)
+  const [seedResult, setSeedResult] = useState(null)
 
   const loadSecret = () =>
     fetch('/api/settings').then(r => r.json()).then(s => setSecret(s.webhook_secret || ''))
@@ -471,6 +473,55 @@ export default function Connections() {
             </table>
           </div>
         </details>
+      </div>
+
+      {/* Seed Historical Data */}
+      <div className="card mb-5 border-2 border-dashed border-peach/40">
+        <div className="flex items-start gap-3">
+          <span className="text-2xl mt-0.5">🌱</span>
+          <div className="flex-1">
+            <h2 className="font-semibold text-ink mb-1">Seed Historical Data</h2>
+            <p className="text-xs text-gray-500 mb-3">
+              Loads 255 historical cancellations (2024–2025), 92 client feedback/scorecard entries, and QuickBooks marketing &amp; recruiting expense history into the production database. Safe to run multiple times — all inserts are idempotent.
+            </p>
+            {seedResult?.ok && (
+              <div className="mb-3 px-3 py-2 bg-green-50 border border-green-100 rounded-lg text-xs text-green-700 font-medium">
+                ✓ {seedResult.message}
+              </div>
+            )}
+            {seedResult?.error && (
+              <div className="mb-3 px-3 py-2 bg-red-50 border border-red-100 rounded-lg text-xs text-red-700 font-medium">
+                ✗ {seedResult.error}
+              </div>
+            )}
+            <div className="flex items-center gap-3">
+              <button
+                onClick={async () => {
+                  if (!secret) { setSeedResult({ error: 'Set your webhook secret in Settings first.' }); return }
+                  setSeeding(true)
+                  setSeedResult(null)
+                  try {
+                    const res = await fetch('/api/webhook/seed-historical', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json', 'X-Webhook-Secret': secret },
+                    })
+                    const data = await res.json()
+                    setSeedResult(res.ok ? { ok: true, message: data.message || 'Seeded successfully' } : { error: data.error || 'Seed failed' })
+                  } catch (e) {
+                    setSeedResult({ error: 'Network error — check server logs' })
+                  } finally {
+                    setSeeding(false)
+                  }
+                }}
+                disabled={seeding}
+                className="btn-primary text-sm disabled:opacity-50"
+              >
+                {seeding ? 'Seeding…' : 'Seed Production Database'}
+              </button>
+              <span className="text-xs text-gray-400">Requires webhook secret to be set</span>
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* QuickBooks */}

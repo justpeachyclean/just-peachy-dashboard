@@ -54,4 +54,31 @@ router.post('/', (req, res) => {
   res.json({ ok: true, id: result.lastInsertRowid })
 })
 
+// PATCH /api/feedback/:id
+router.patch('/:id', (req, res) => {
+  const { client_name, feedback_date, rating, feedback_type, comment, tech_name } = req.body
+  db.prepare(`
+    UPDATE client_feedback SET
+      client_name   = COALESCE(?, client_name),
+      feedback_date = COALESCE(?, feedback_date),
+      rating        = COALESCE(?, rating),
+      feedback_type = COALESCE(?, feedback_type),
+      comment       = COALESCE(?, comment),
+      tech_name     = COALESCE(?, tech_name)
+    WHERE id = ?
+  `).run(
+    client_name ?? null, feedback_date ?? null,
+    rating ? parseInt(rating) : null,
+    feedback_type ?? null, comment ?? null, tech_name ?? null,
+    req.params.id
+  )
+  res.json({ ok: true })
+})
+
+// DELETE /api/feedback/:id
+router.delete('/:id', (req, res) => {
+  db.prepare(`DELETE FROM client_feedback WHERE id = ?`).run(req.params.id)
+  res.json({ ok: true })
+})
+
 module.exports = router

@@ -64,6 +64,12 @@ export default function ClientNurture() {
     patch(c.id, { status: 'won_back', won_back: 1, won_back_date: new Date().toISOString().split('T')[0] })
   }
 
+  const deleteClient = async (c) => {
+    if (!window.confirm(`Remove ${c.client_name || 'this client'} from the nurture queue?`)) return
+    await fetch(`/api/nurture/${c.id}`, { method: 'DELETE' })
+    load()
+  }
+
   const handleAdd = async (e) => {
     e.preventDefault()
     await fetch('/api/nurture', {
@@ -209,6 +215,13 @@ export default function ClientNurture() {
                       >
                         Won Back
                       </button>
+                      <button
+                        onClick={() => deleteClient(c)}
+                        className="text-xs text-gray-300 hover:text-red-400 px-1 py-1 transition-colors"
+                        title="Remove from queue"
+                      >
+                        ✕
+                      </button>
                     </div>
                   </div>
 
@@ -273,11 +286,16 @@ export default function ClientNurture() {
                   <span className="font-medium text-ink">{c.client_name}</span>
                   {c.reason_code && <span className="ml-2 text-xs text-teal-600 font-semibold">{c.reason_code}</span>}
                 </div>
-                <div className="text-xs text-gray-400">
+                <div className="flex items-center gap-3 text-xs text-gray-400">
                   {c.won_back_date && `Won back ${c.won_back_date}`}
                   {c.cancel_date && ` · was out ${daysSince(c.cancel_date) != null && c.won_back_date
                     ? Math.round((new Date(c.won_back_date) - new Date(c.cancel_date)) / (1000*60*60*24)) + 'd'
                     : ''}`}
+                  <button
+                    onClick={() => deleteClient(c)}
+                    className="text-gray-300 hover:text-red-400 transition-colors ml-2"
+                    title="Remove"
+                  >✕</button>
                 </div>
               </div>
             ))}

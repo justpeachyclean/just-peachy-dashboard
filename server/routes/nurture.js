@@ -36,6 +36,12 @@ router.patch('/:id', (req, res) => {
   res.json({ ok: true })
 })
 
+// DELETE /api/nurture/:id
+router.delete('/:id', (req, res) => {
+  db.prepare(`DELETE FROM client_nurture WHERE id = ?`).run(req.params.id)
+  res.json({ ok: true })
+})
+
 // POST /api/nurture  (manually add a client to nurture)
 router.post('/', (req, res) => {
   const { client_id, client_name, reason_code, cancel_date, next_contact } = req.body

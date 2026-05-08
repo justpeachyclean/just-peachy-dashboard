@@ -28,6 +28,9 @@ export default function Feedback() {
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [filter, setFilter] = useState('')
+  const [editingRow, setEditingRow] = useState(null)
+  const [editForm, setEditForm] = useState({})
+  const [editSaving, setEditSaving] = useState(false)
 
   const load = () =>
     fetch(`/api/feedback?year=${selYear}`)
@@ -54,6 +57,36 @@ export default function Feedback() {
     load()
   }
 
+  const startEdit = (r) => {
+    setEditingRow(r.id)
+    setEditForm({
+      client_name: r.client_name || '',
+      feedback_date: r.feedback_date || '',
+      rating: String(r.rating || '5'),
+      feedback_type: r.feedback_type || 'survey',
+      comment: r.comment || '',
+      tech_name: r.tech_name || '',
+    })
+  }
+
+  const saveEdit = async (id) => {
+    setEditSaving(true)
+    await fetch(`/api/feedback/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...editForm, rating: parseInt(editForm.rating) }),
+    })
+    setEditSaving(false)
+    setEditingRow(null)
+    load()
+  }
+
+  const deleteRow = async (r) => {
+    if (!window.confirm(`Delete feedback from ${r.client_name || 'this client'}?`)) return
+    await fetch(`/api/feedback/${r.id}`, { method: 'DELETE' })
+    load()
+  }
+
   const stats = data?.stats || {}
   const monthly = data?.stats?.monthly || []
   const rows = (data?.feedback || []).filter(r =>
@@ -63,7 +96,6 @@ export default function Feedback() {
     (r.tech_name || '').toLowerCase().includes(filter.toLowerCase())
   )
 
-  const maxCount = Math.max(1, ...monthly.map(m => m.count))
   const years = Array.from({ length: 5 }, (_, i) => year - 2 + i)
 
   // Distribution
@@ -99,7 +131,6 @@ export default function Feedback() {
           ✓ Feedback logged
         </div>
       )}
-
 
       {/* Manual entry form */}
       {showForm && (
@@ -248,19 +279,84 @@ export default function Feedback() {
                   <th className="text-left py-2 pr-3 font-medium">Rating</th>
                   <th className="text-left py-2 pr-3 font-medium hidden sm:table-cell">Tech</th>
                   <th className="text-left py-2 font-medium">Comment</th>
+                  <th className="py-2 w-16"></th>
                 </tr>
               </thead>
               <tbody>
                 {rows.map(r => (
-                  <tr key={r.id} className="border-b border-gray-50 hover:bg-gray-50/50">
-                    <td className="py-2 pr-3 text-xs text-gray-500 whitespace-nowrap">{r.feedback_date}</td>
-                    <td className="py-2 pr-3 font-medium text-ink">{r.client_name || '—'}</td>
-                    <td className="py-2 pr-3"><StarRating value={r.rating} /></td>
-                    <td className="py-2 pr-3 text-xs text-gray-500 hidden sm:table-cell">{r.tech_name || '—'}</td>
-                    <td className="py-2 text-xs text-gray-600 max-w-xs truncate italic">
-                      {r.comment ? `"${r.comment}"` : <span className="text-gray-300 not-italic">—</span>}
-                    </td>
-                  </tr>
+                  <>
+                    <tr key={r.id} className="border-b border-gray-50 hover:bg-gray-50/50">
+                      <td className="py-2 pr-3 text-xs text-gray-500 whitespace-nowrap">{r.feedback_date}</td>
+                      <td className="py-2 pr-3 font-medium text-ink">{r.client_name || '—'}</td>
+                      <td className="py-2 pr-3"><StarRating value={r.rating} /></td>
+                      <td className="py-2 pr-3 text-xs text-gray-500 hidden sm:table-cell">{r.tech_name || '—'}</td>
+                      <td className="py-2 text-xs text-gray-600 max-w-xs truncate italic">
+                        {r.comment ? `"${r.comment}"` : <span className="text-gray-300 not-italic">—</span>}
+                      </td>
+                      <td className="py-2 pl-2">
+                        <div className="flex items-center gap-2 justify-end">
+                          <button
+                            onClick={() => editingRow === r.id ? setEditingRow(null) : startEdit(r)}
+                            className="text-xs text-sage hover:text-sagehover font-medium"
+                          >
+                            {editingRow === r.id ? 'Cancel' : 'Edit'}
+                          </button>
+                          <button
+                            onClick={() => deleteRow(r)}
+                            className="text-gray-300 hover:text-red-400 transition-colors text-xs"
+                            title="Delete"
+                          >✕</button>
+                        </div>
+                      </td>
+                    </tr>
+                    {editingRow === r.id && (
+                      <tr key={`edit-${r.id}`} className="bg-gray-50/60">
+                        <td colSpan={6} className="px-3 py-3">
+                          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-3">
+                            <div>
+                              <label className="form-label text-xs">Client Name</label>
+                              <input className="form-input py-1 text-sm" value={editForm.client_name} onChange={e => setEditForm(p => ({ ...p, client_name: e.target.value }))} />
+                            </div>
+                            <div>
+                              <label className="form-label text-xs">Date</label>
+                              <input type="date" className="form-input py-1 text-sm" value={editForm.feedback_date} onChange={e => setEditForm(p => ({ ...p, feedback_date: e.target.value }))} />
+                            </div>
+                            <div>
+                              <label className="form-label text-xs">Rating</label>
+                              <select className="form-input py-1 text-sm" value={editForm.rating} onChange={e => setEditForm(p => ({ ...p, rating: e.target.value }))}>
+                                {[5,4,3,2,1].map(n => <option key={n} value={n}>{n} ★</option>)}
+                              </select>
+                            </div>
+                            <div>
+                              <label className="form-label text-xs">Type</label>
+                              <select className="form-input py-1 text-sm" value={editForm.feedback_type} onChange={e => setEditForm(p => ({ ...p, feedback_type: e.target.value }))}>
+                                <option value="survey">Survey</option>
+                                <option value="review">Review</option>
+                                <option value="nps">NPS</option>
+                                <option value="complaint">Complaint</option>
+                                <option value="compliment">Compliment</option>
+                                <option value="scorecard">Scorecard</option>
+                              </select>
+                            </div>
+                            <div>
+                              <label className="form-label text-xs">Tech Name</label>
+                              <input className="form-input py-1 text-sm" value={editForm.tech_name} onChange={e => setEditForm(p => ({ ...p, tech_name: e.target.value }))} />
+                            </div>
+                            <div className="col-span-2 sm:col-span-1">
+                              <label className="form-label text-xs">Comment</label>
+                              <input className="form-input py-1 text-sm" value={editForm.comment} onChange={e => setEditForm(p => ({ ...p, comment: e.target.value }))} />
+                            </div>
+                          </div>
+                          <div className="flex justify-end gap-2">
+                            <button onClick={() => setEditingRow(null)} className="text-sm text-gray-500 hover:text-gray-700">Cancel</button>
+                            <button onClick={() => saveEdit(r.id)} disabled={editSaving} className="btn-primary text-sm">
+                              {editSaving ? 'Saving…' : 'Save'}
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </>
                 ))}
               </tbody>
             </table>

@@ -166,6 +166,23 @@ CREATE TABLE IF NOT EXISTS client_nurture (
   updated_at      TEXT DEFAULT (datetime('now'))
 );
 
+-- Client care calls and appreciation gifts
+CREATE TABLE IF NOT EXISTS client_care (
+  id             INTEGER PRIMARY KEY AUTOINCREMENT,
+  client_id      TEXT,
+  client_name    TEXT NOT NULL,
+  care_type      TEXT NOT NULL,   -- first_recurring | fourth_recurring | six_month | one_year | scorecard_followup | gift
+  gift_type      TEXT,            -- thank_you_card | cookies | plant | other
+  gift_notes     TEXT,
+  scheduled_date TEXT,
+  completed      INTEGER DEFAULT 0,
+  completed_date TEXT,
+  notes          TEXT,
+  assigned_to    TEXT,
+  created_at     TEXT DEFAULT (datetime('now')),
+  updated_at     TEXT DEFAULT (datetime('now'))
+);
+
 -- Audit log
 CREATE TABLE IF NOT EXISTS audit_log (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -188,6 +205,7 @@ INSERT OR IGNORE INTO settings (key, value) VALUES
   ('qb_recruiting_category',    'Recruiting'),
   ('qb_training_category',      'Training'),
   ('webhook_secret',            'change-me-before-connecting-zapier'),
+  ('dashboard_password',        ''),
   ('billing_rate_per_rge',      '55'),
   ('goal_hours',                '6.5'),
   ('stretch_hours',             '7');

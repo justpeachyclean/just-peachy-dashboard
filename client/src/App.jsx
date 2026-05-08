@@ -1,5 +1,7 @@
 import { Routes, Route, Navigate } from 'react-router-dom'
+import { AuthProvider, useAuth } from './AuthContext'
 import Navbar from './components/Navbar'
+import Login from './pages/Login'
 import Overview from './pages/Overview'
 import Sales from './pages/Sales'
 import BonusTracker from './pages/BonusTracker'
@@ -13,7 +15,19 @@ import Connections from './pages/Connections'
 import Entry from './pages/Entry'
 import Settings from './pages/Settings'
 
-export default function App() {
+function AppShell() {
+  const { isLoggedIn, checked } = useAuth()
+
+  if (!checked) {
+    return (
+      <div className="min-h-screen bg-bg flex items-center justify-center">
+        <div className="text-gray-400 text-sm">Loading…</div>
+      </div>
+    )
+  }
+
+  if (!isLoggedIn) return <Login />
+
   return (
     <div className="min-h-screen bg-bg">
       <Navbar />
@@ -35,5 +49,13 @@ export default function App() {
         </Routes>
       </main>
     </div>
+  )
+}
+
+export default function App() {
+  return (
+    <AuthProvider>
+      <AppShell />
+    </AuthProvider>
   )
 }

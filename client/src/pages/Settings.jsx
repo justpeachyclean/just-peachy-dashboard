@@ -171,6 +171,7 @@ const FIELDS = [
   {
     section: 'Security',
     fields: [
+      { key: 'dashboard_password', label: 'Team Login Password', type: 'password', hint: 'Set a password so your team must log in. Leave blank to keep the dashboard open.' },
       { key: 'webhook_secret', label: 'Zapier Webhook Secret', type: 'text', hint: 'Add this as X-Webhook-Secret header in all Zapier POSTs' },
     ],
   },

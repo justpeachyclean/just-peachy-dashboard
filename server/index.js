@@ -2,14 +2,17 @@ require('dotenv').config()
 const express = require('express')
 const cors = require('cors')
 const path = require('path')
+const { authMiddleware } = require('./lib/auth')
 
 const app = express()
 const PORT = process.env.PORT || 3001
 
 app.use(cors({ origin: process.env.CLIENT_ORIGIN || 'http://localhost:3000' }))
 app.use(express.json())
+app.use(authMiddleware)
 
 // Routes
+app.use('/api/auth',           require('./routes/auth'))
 app.use('/api/settings',       require('./routes/settings'))
 app.use('/api/entry/manual',   require('./routes/entry'))
 app.use('/api/sales',          require('./routes/sales'))
@@ -21,6 +24,7 @@ app.use('/api/expenses',       require('./routes/expenses'))
 app.use('/api/cancellations',  require('./routes/cancellations'))
 app.use('/api/nurture',        require('./routes/nurture'))
 app.use('/api/feedback',       require('./routes/feedback'))
+app.use('/api/care',           require('./routes/care'))
 
 // Health check
 app.get('/api/health', (req, res) => {

@@ -1,4 +1,5 @@
 import { NavLink, Link } from 'react-router-dom'
+import { useAuth } from '../AuthContext'
 
 const tabs = [
   { path: '/overview', label: 'Overview' },
@@ -7,13 +8,14 @@ const tabs = [
   { path: '/economics', label: 'Unit Economics' },
   { path: '/leads', label: 'Client Log' },
   { path: '/cancellations', label: 'Cancellations' },
-  { path: '/nurture', label: 'Nurture' },
+  { path: '/nurture', label: 'Client Care' },
   { path: '/feedback', label: 'Feedback' },
   { path: '/hiring', label: 'Hiring' },
   { path: '/connections', label: 'Connections' },
 ]
 
 export default function Navbar() {
+  const { authRequired, logout } = useAuth()
   return (
     <header className="bg-white shadow-sm sticky top-0 z-50">
       <div className="max-w-7xl mx-auto px-4">
@@ -48,6 +50,15 @@ export default function Navbar() {
             >
               ⚙️
             </Link>
+            {authRequired && (
+              <button
+                onClick={() => { if (window.confirm('Sign out?')) logout() }}
+                className="text-xs text-gray-400 hover:text-gray-600 px-2 py-1 rounded-lg hover:bg-gray-50 transition-colors"
+                title="Sign out"
+              >
+                Sign out
+              </button>
+            )}
           </div>
         </div>
         <nav className="flex gap-6 -mb-px overflow-x-auto">

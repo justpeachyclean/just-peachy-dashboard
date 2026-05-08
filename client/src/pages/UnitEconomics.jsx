@@ -1,3 +1,4 @@
+import { apiFetch } from '../AuthContext'
 import { useState, useEffect } from 'react'
 import { exportCsv } from '../utils/exportCsv'
 import { Link } from 'react-router-dom'
@@ -42,7 +43,7 @@ export default function UnitEconomics() {
   const year = new Date().getFullYear()
 
   useEffect(() => {
-    fetch(`/api/data/economics?year=${year}`)
+    apiFetch(`/api/data/economics?year=${year}`)
       .then(r => r.json())
       .then(setData)
       .catch(setError)

@@ -1,3 +1,4 @@
+import { apiFetch } from '../AuthContext'
 import { useState, useEffect } from 'react'
 import { exportCsv } from '../utils/exportCsv'
 import { Link } from 'react-router-dom'
@@ -38,7 +39,7 @@ export default function Hiring() {
   const [year, setYear] = useState(new Date().getFullYear())
 
   useEffect(() => {
-    fetch(`/api/data/hiring?year=${year}`)
+    apiFetch(`/api/data/hiring?year=${year}`)
       .then(r => r.json())
       .then(setData)
       .catch(setError)

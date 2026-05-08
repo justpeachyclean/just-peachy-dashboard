@@ -48,9 +48,37 @@ const migrations = [
   `ALTER TABLE cancelled_clients ADD COLUMN price_per_visit REAL`,
   `ALTER TABLE cancelled_clients ADD COLUMN annual_value_lost REAL`,
   `INSERT OR IGNORE INTO settings (key, value) VALUES ('dashboard_password', '')`,
+  `CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT NOT NULL UNIQUE COLLATE NOCASE,
+    display_name TEXT,
+    role TEXT DEFAULT 'member',
+    password_hash TEXT NOT NULL,
+    active INTEGER DEFAULT 1,
+    last_login TEXT,
+    created_at TEXT DEFAULT (datetime('now'))
+  )`,
 ]
 for (const sql of migrations) {
   try { db.exec(sql) } catch (_) { /* column already exists — safe to ignore */ }
 }
+
+// Seed first admin user if none exist
+const { randomBytes, scryptSync } = require('crypto')
+function hashPassword(pw) {
+  const salt = randomBytes(16).toString('hex')
+  const hash = scryptSync(pw, salt, 64).toString('hex')
+  return `${salt}:${hash}`
+}
+try {
+  const count = db.prepare('SELECT COUNT(*) as n FROM users').get().n
+  if (count === 0) {
+    const existing = db.prepare("SELECT value FROM settings WHERE key='dashboard_password'").get()?.value
+    const initPw = (existing && existing.trim()) ? existing.trim() : 'admin'
+    db.prepare(`INSERT INTO users (username, display_name, role, password_hash) VALUES (?,?,?,?)`)
+      .run('admin', 'Admin', 'admin', hashPassword(initPw))
+    console.log(`🔐 Created default admin user — username: admin, password: ${initPw}`)
+  }
+} catch(_) {}
 
 module.exports = db

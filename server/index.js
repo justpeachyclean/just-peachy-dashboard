@@ -25,6 +25,7 @@ app.use('/api/cancellations',  require('./routes/cancellations'))
 app.use('/api/nurture',        require('./routes/nurture'))
 app.use('/api/feedback',       require('./routes/feedback'))
 app.use('/api/care',           require('./routes/care'))
+app.use('/api/users',          require('./routes/users'))
 
 // Health check
 app.get('/api/health', (req, res) => {
@@ -32,6 +33,13 @@ app.get('/api/health', (req, res) => {
   const dbPath = process.env.DB_PATH || require('path').join(__dirname, 'data', 'peachy.db')
   const settingCount = db.prepare('SELECT COUNT(*) as n FROM settings').get().n
   res.json({ status: 'ok', ts: new Date().toISOString(), db_path: dbPath, settings_count: settingCount })
+})
+
+// Audit log endpoint
+app.get('/api/audit', (req, res) => {
+  const db = require('./db')
+  const rows = db.prepare(`SELECT * FROM audit_log ORDER BY created_at DESC LIMIT 100`).all()
+  res.json(rows)
 })
 
 // Serve built client in production

@@ -15,7 +15,7 @@ const tabs = [
 ]
 
 export default function Navbar() {
-  const { authRequired, logout } = useAuth()
+  const { authRequired, currentUser, logout } = useAuth()
   return (
     <header className="bg-white shadow-sm sticky top-0 z-50">
       <div className="max-w-7xl mx-auto px-4">
@@ -50,14 +50,18 @@ export default function Navbar() {
             >
               ⚙️
             </Link>
-            {authRequired && (
-              <button
-                onClick={() => { if (window.confirm('Sign out?')) logout() }}
-                className="text-xs text-gray-400 hover:text-gray-600 px-2 py-1 rounded-lg hover:bg-gray-50 transition-colors"
-                title="Sign out"
-              >
-                Sign out
-              </button>
+            {authRequired && currentUser && (
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-gray-500 hidden sm:block">
+                  {currentUser.display_name || currentUser.username}
+                </span>
+                <button
+                  onClick={() => { if (window.confirm('Sign out?')) logout() }}
+                  className="text-xs text-gray-400 hover:text-gray-600 px-2 py-1 rounded-lg hover:bg-gray-50 transition-colors"
+                >
+                  Sign out
+                </button>
+              </div>
             )}
           </div>
         </div>

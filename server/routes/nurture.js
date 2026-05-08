@@ -1,6 +1,7 @@
 const express = require('express')
 const router = express.Router()
 const db = require('../db')
+const { audit } = require('../lib/auth')
 
 // GET /api/nurture
 router.get('/', (req, res) => {
@@ -32,13 +33,14 @@ router.patch('/:id', (req, res) => {
     won_back !== undefined ? (won_back ? 1 : 0) : null,
     won_back_date ?? null, id
   )
-
+  audit(req, 'nurture_updated', `ID ${id}`)
   res.json({ ok: true })
 })
 
 // DELETE /api/nurture/:id
 router.delete('/:id', (req, res) => {
   db.prepare(`DELETE FROM client_nurture WHERE id = ?`).run(req.params.id)
+  audit(req, 'nurture_deleted', `ID ${req.params.id}`)
   res.json({ ok: true })
 })
 

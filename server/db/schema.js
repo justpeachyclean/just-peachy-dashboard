@@ -183,6 +183,18 @@ CREATE TABLE IF NOT EXISTS client_care (
   updated_at     TEXT DEFAULT (datetime('now'))
 );
 
+-- Team user accounts
+CREATE TABLE IF NOT EXISTS users (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  username      TEXT NOT NULL UNIQUE COLLATE NOCASE,
+  display_name  TEXT,
+  role          TEXT DEFAULT 'member',
+  password_hash TEXT NOT NULL,
+  active        INTEGER DEFAULT 1,
+  last_login    TEXT,
+  created_at    TEXT DEFAULT (datetime('now'))
+);
+
 -- Audit log
 CREATE TABLE IF NOT EXISTS audit_log (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,

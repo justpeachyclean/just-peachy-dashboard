@@ -1,6 +1,7 @@
 const express = require('express')
 const router = express.Router()
 const db = require('../db')
+const { audit } = require('../lib/auth')
 
 const VISITS_PER_YEAR = {
   weekly:     52,
@@ -101,6 +102,7 @@ router.post('/', (req, res) => {
     rep_name ?? null, month, source, external_id ?? null, notes ?? null
   )
 
+  audit(req, 'lead_added', `${client_name || 'Unknown'}`)
   res.json({ ok: true })
 })
 
@@ -149,13 +151,14 @@ router.patch('/:id', (req, res) => {
     updated.rep_name, updated.notes, updated.month,
     existing.id
   )
-
+  audit(req, 'lead_updated', `ID ${existing.id}`)
   res.json({ ok: true })
 })
 
 // DELETE /api/leads/:id
 router.delete('/:id', (req, res) => {
   db.prepare('DELETE FROM lead_records WHERE id = ?').run(req.params.id)
+  audit(req, 'lead_deleted', `ID ${req.params.id}`)
   res.json({ ok: true })
 })
 

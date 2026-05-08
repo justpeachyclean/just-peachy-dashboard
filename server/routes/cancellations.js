@@ -2,6 +2,7 @@ const express = require('express')
 const router = express.Router()
 const db = require('../db')
 const CODES = require('../lib/cancellationCodes')
+const { audit } = require('../lib/auth')
 
 function resolveCode(code) {
   if (!code) return { label: null, category: null }
@@ -113,6 +114,7 @@ router.post('/', (req, res) => {
     )
   }
 
+  audit(req, 'cancellation_added', `${client_name || 'Unknown'} — ${cancel_date}`)
   res.json({ ok: true, id: result.lastInsertRowid })
 })
 
@@ -158,6 +160,8 @@ router.patch('/:id', (req, res) => {
     annual_value_lost !== undefined ? parseFloat(annual_value_lost) || null : null,
     req.params.id
   )
+
+  audit(req, 'cancellation_updated', `ID ${req.params.id} — ${Object.keys(req.body).join(', ')}`)
 
   // If reason code is now T-coded, add to nurture if not already there
   if (reason_code && reason_code.toUpperCase().startsWith('T')) {

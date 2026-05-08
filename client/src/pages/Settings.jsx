@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useAuth, apiFetch } from '../AuthContext'
 
 const MONTH_LABELS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 
@@ -177,7 +178,208 @@ const FIELDS = [
   },
 ]
 
+function TeamMembers() {
+  const { currentUser } = useAuth()
+  const [users, setUsers] = useState([])
+  const [newUser, setNewUser] = useState({ username: '', display_name: '', password: '', role: 'member' })
+  const [addStatus, setAddStatus] = useState(null)
+  const [resetId, setResetId] = useState(null)
+  const [resetPw, setResetPw] = useState('')
+  const [resetStatus, setResetStatus] = useState(null)
+
+  const load = () => {
+    apiFetch('/api/users').then(r => r.json()).then(data => {
+      if (Array.isArray(data)) setUsers(data)
+    })
+  }
+
+  useEffect(() => { load() }, [])
+
+  const handleAdd = async (e) => {
+    e.preventDefault()
+    setAddStatus('saving')
+    try {
+      const res = await apiFetch('/api/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newUser),
+      })
+      if (!res.ok) {
+        const err = await res.json()
+        setAddStatus(err.error || 'Error')
+        return
+      }
+      setNewUser({ username: '', display_name: '', password: '', role: 'member' })
+      setAddStatus('saved')
+      setTimeout(() => setAddStatus(null), 3000)
+      load()
+    } catch {
+      setAddStatus('Error adding user')
+    }
+  }
+
+  const handleDeactivate = async (id) => {
+    if (!window.confirm('Deactivate this user?')) return
+    await apiFetch(`/api/users/${id}`, { method: 'DELETE' })
+    load()
+  }
+
+  const handleResetPassword = async (id) => {
+    if (!resetPw.trim()) return
+    setResetStatus('saving')
+    try {
+      const res = await apiFetch(`/api/users/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: resetPw }),
+      })
+      if (!res.ok) { setResetStatus('Error'); return }
+      setResetId(null)
+      setResetPw('')
+      setResetStatus(null)
+    } catch {
+      setResetStatus('Error')
+    }
+  }
+
+  return (
+    <div className="card">
+      <h2 className="text-sm font-semibold text-sage mb-4 pb-2 border-b border-gray-100 uppercase tracking-wider">Team Members</h2>
+
+      <div className="overflow-x-auto mb-6">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-xs text-gray-400 uppercase tracking-wide border-b border-gray-100">
+              <th className="text-left pb-2 font-medium pr-3">Username</th>
+              <th className="text-left pb-2 font-medium pr-3">Display Name</th>
+              <th className="text-left pb-2 font-medium pr-3">Role</th>
+              <th className="text-left pb-2 font-medium pr-3">Last Login</th>
+              <th className="text-left pb-2 font-medium">Actions</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-50">
+            {users.filter(u => u.active).map(u => (
+              <tr key={u.id}>
+                <td className="py-2 pr-3 font-medium text-ink">{u.username}</td>
+                <td className="py-2 pr-3 text-gray-600">{u.display_name || '—'}</td>
+                <td className="py-2 pr-3">
+                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${u.role === 'admin' ? 'bg-brand/10 text-brand' : 'bg-gray-100 text-gray-500'}`}>
+                    {u.role}
+                  </span>
+                </td>
+                <td className="py-2 pr-3 text-gray-400 text-xs">{u.last_login ? new Date(u.last_login).toLocaleDateString() : 'Never'}</td>
+                <td className="py-2">
+                  <div className="flex items-center gap-2">
+                    {resetId === u.id ? (
+                      <div className="flex items-center gap-1">
+                        <input
+                          type="password"
+                          className="form-input py-0.5 px-2 text-xs w-32"
+                          placeholder="New password"
+                          value={resetPw}
+                          onChange={e => setResetPw(e.target.value)}
+                        />
+                        <button className="text-xs text-ok font-medium" onClick={() => handleResetPassword(u.id)}>
+                          {resetStatus === 'saving' ? '…' : 'Set'}
+                        </button>
+                        <button className="text-xs text-gray-400" onClick={() => { setResetId(null); setResetPw('') }}>Cancel</button>
+                      </div>
+                    ) : (
+                      <button className="text-xs text-blue-500 hover:underline" onClick={() => setResetId(u.id)}>Reset PW</button>
+                    )}
+                    {u.id !== currentUser?.id && (
+                      <button className="text-xs text-danger hover:underline" onClick={() => handleDeactivate(u.id)}>Deactivate</button>
+                    )}
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <h3 className="text-sm font-semibold text-ink mb-3">Add Team Member</h3>
+      <form onSubmit={handleAdd} className="grid grid-cols-2 gap-3">
+        <div>
+          <label className="form-label">Username</label>
+          <input type="text" required className="form-input" placeholder="e.g. lexi" value={newUser.username} onChange={e => setNewUser(p => ({ ...p, username: e.target.value }))} />
+        </div>
+        <div>
+          <label className="form-label">Display Name</label>
+          <input type="text" className="form-input" placeholder="e.g. Lexi" value={newUser.display_name} onChange={e => setNewUser(p => ({ ...p, display_name: e.target.value }))} />
+        </div>
+        <div>
+          <label className="form-label">Password</label>
+          <input type="password" required className="form-input" placeholder="Initial password" value={newUser.password} onChange={e => setNewUser(p => ({ ...p, password: e.target.value }))} />
+        </div>
+        <div>
+          <label className="form-label">Role</label>
+          <select className="form-input" value={newUser.role} onChange={e => setNewUser(p => ({ ...p, role: e.target.value }))}>
+            <option value="member">Member</option>
+            <option value="admin">Admin</option>
+          </select>
+        </div>
+        <div className="col-span-2 flex items-center gap-3">
+          <button type="submit" className="btn-primary text-sm" disabled={addStatus === 'saving'}>
+            {addStatus === 'saving' ? 'Adding…' : 'Add User'}
+          </button>
+          {addStatus === 'saved' && <span className="text-ok text-sm font-medium">User added</span>}
+          {addStatus && addStatus !== 'saving' && addStatus !== 'saved' && <span className="text-danger text-sm font-medium">{addStatus}</span>}
+        </div>
+      </form>
+    </div>
+  )
+}
+
+function AuditLog() {
+  const [entries, setEntries] = useState([])
+  const [loaded, setLoaded] = useState(false)
+
+  useEffect(() => {
+    apiFetch('/api/audit').then(r => r.json()).then(data => {
+      if (Array.isArray(data)) setEntries(data)
+      setLoaded(true)
+    })
+  }, [])
+
+  if (!loaded) return <div className="text-gray-400 text-sm py-4">Loading audit log…</div>
+
+  return (
+    <div className="card">
+      <h2 className="text-sm font-semibold text-sage mb-4 pb-2 border-b border-gray-100 uppercase tracking-wider">Audit Log</h2>
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-xs text-gray-400 uppercase tracking-wide border-b border-gray-100">
+              <th className="text-left pb-2 font-medium pr-3">When</th>
+              <th className="text-left pb-2 font-medium pr-3">User</th>
+              <th className="text-left pb-2 font-medium pr-3">Action</th>
+              <th className="text-left pb-2 font-medium">Description</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-50">
+            {entries.slice(0, 50).map(e => (
+              <tr key={e.id}>
+                <td className="py-1.5 pr-3 text-gray-400 text-xs whitespace-nowrap">{new Date(e.created_at).toLocaleString()}</td>
+                <td className="py-1.5 pr-3 text-gray-600 text-xs">{e.user || 'system'}</td>
+                <td className="py-1.5 pr-3 text-xs">
+                  <span className="bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded font-mono">{e.action_type}</span>
+                </td>
+                <td className="py-1.5 text-gray-600 text-xs">{e.description}</td>
+              </tr>
+            ))}
+            {entries.length === 0 && (
+              <tr><td colSpan={4} className="py-4 text-center text-gray-400 text-xs">No audit entries yet</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
 export default function Settings() {
+  const { currentUser } = useAuth()
   const [values, setValues] = useState({})
   const [status, setStatus] = useState(null)
   const [loaded, setLoaded] = useState(false)
@@ -275,6 +477,13 @@ export default function Settings() {
           recruitingCategory={values.qb_recruiting_category || 'Recruiting'}
         />
       </div>
+
+      {currentUser?.role === 'admin' && (
+        <div className="mt-5 space-y-5">
+          <TeamMembers />
+          <AuditLog />
+        </div>
+      )}
     </div>
   )
 }

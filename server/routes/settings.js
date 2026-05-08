@@ -1,6 +1,7 @@
 const express = require('express')
 const router = express.Router()
 const db = require('../db')
+const { audit } = require('../lib/auth')
 
 // GET all settings as {key: value} map
 router.get('/', (req, res) => {
@@ -30,9 +31,7 @@ router.put('/', (req, res) => {
 
   upsertMany(Object.entries(updates))
 
-  db.prepare(
-    `INSERT INTO audit_log (action_type, entity, description) VALUES ('update', 'settings', ?)`
-  ).run(`Updated keys: ${Object.keys(updates).join(', ')}`)
+  audit(req, 'settings_updated', 'Settings saved')
 
   res.json({ ok: true })
 })

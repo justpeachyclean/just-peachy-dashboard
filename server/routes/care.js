@@ -1,6 +1,7 @@
 const express = require('express')
 const router = express.Router()
 const db = require('../db')
+const { audit } = require('../lib/auth')
 
 // GET /api/care?status=pending|completed|all
 router.get('/', (req, res) => {
@@ -44,6 +45,7 @@ router.post('/', (req, res) => {
     gift_type ?? null, gift_notes ?? null,
     scheduled_date ?? null, notes ?? null, assigned_to ?? null
   )
+  audit(req, 'care_added', `${client_name} — ${care_type}`)
   res.json({ ok: true, id: result.lastInsertRowid })
 })
 
@@ -70,12 +72,14 @@ router.patch('/:id', (req, res) => {
     completed_date ?? null, notes ?? null, assigned_to ?? null,
     req.params.id
   )
+  audit(req, 'care_updated', `ID ${req.params.id}`)
   res.json({ ok: true })
 })
 
 // DELETE /api/care/:id
 router.delete('/:id', (req, res) => {
   db.prepare('DELETE FROM client_care WHERE id = ?').run(req.params.id)
+  audit(req, 'care_deleted', `ID ${req.params.id}`)
   res.json({ ok: true })
 })
 

@@ -1,6 +1,7 @@
 const express = require('express')
 const router = express.Router()
 const db = require('../db')
+const { audit } = require('../lib/auth')
 
 // GET /api/feedback?year=YYYY
 router.get('/', (req, res) => {
@@ -51,6 +52,7 @@ router.post('/', (req, res) => {
     comment ?? null, tech_name ?? null
   )
 
+  audit(req, 'feedback_added', `${client_name || 'Unknown'} — ${rating}★`)
   res.json({ ok: true, id: result.lastInsertRowid })
 })
 
@@ -72,12 +74,14 @@ router.patch('/:id', (req, res) => {
     feedback_type ?? null, comment ?? null, tech_name ?? null,
     req.params.id
   )
+  audit(req, 'feedback_updated', `ID ${req.params.id}`)
   res.json({ ok: true })
 })
 
 // DELETE /api/feedback/:id
 router.delete('/:id', (req, res) => {
   db.prepare(`DELETE FROM client_feedback WHERE id = ?`).run(req.params.id)
+  audit(req, 'feedback_deleted', `ID ${req.params.id}`)
   res.json({ ok: true })
 })
 

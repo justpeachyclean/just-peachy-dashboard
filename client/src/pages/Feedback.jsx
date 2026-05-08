@@ -1,3 +1,4 @@
+import { apiFetch } from '../AuthContext'
 import { useState, useEffect } from 'react'
 
 const MONTH_LABELS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
@@ -33,7 +34,7 @@ export default function Feedback() {
   const [editSaving, setEditSaving] = useState(false)
 
   const load = () =>
-    fetch(`/api/feedback?year=${selYear}`)
+    apiFetch(`/api/feedback?year=${selYear}`)
       .then(r => r.json())
       .then(setData)
 
@@ -44,7 +45,7 @@ export default function Feedback() {
   const handleSubmit = async (e) => {
     e.preventDefault()
     setSaving(true)
-    await fetch('/api/feedback', {
+    await apiFetch('/api/feedback', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ...form, rating: parseInt(form.rating) }),
@@ -71,7 +72,7 @@ export default function Feedback() {
 
   const saveEdit = async (id) => {
     setEditSaving(true)
-    await fetch(`/api/feedback/${id}`, {
+    await apiFetch(`/api/feedback/${id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ...editForm, rating: parseInt(editForm.rating) }),
@@ -83,7 +84,7 @@ export default function Feedback() {
 
   const deleteRow = async (r) => {
     if (!window.confirm(`Delete feedback from ${r.client_name || 'this client'}?`)) return
-    await fetch(`/api/feedback/${r.id}`, { method: 'DELETE' })
+    await apiFetch(`/api/feedback/${r.id}`, { method: 'DELETE' })
     load()
   }
 

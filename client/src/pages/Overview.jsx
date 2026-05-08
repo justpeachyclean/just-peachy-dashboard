@@ -1,3 +1,4 @@
+import { apiFetch } from '../AuthContext'
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import {
@@ -41,8 +42,8 @@ export default function Overview() {
   useEffect(() => {
     const year = new Date().getFullYear()
     Promise.all([
-      fetch('/api/data/summary').then(r => r.json()),
-      fetch(`/api/data/monthly?year=${year}`).then(r => r.json()),
+      apiFetch('/api/data/summary').then(r => r.json()),
+      apiFetch(`/api/data/monthly?year=${year}`).then(r => r.json()),
     ])
       .then(([s, m]) => { setSummary(s); setMonthly(m) })
       .catch(setError)

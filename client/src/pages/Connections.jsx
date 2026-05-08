@@ -1,3 +1,4 @@
+import { apiFetch } from '../AuthContext'
 import { useState, useEffect, useCallback } from 'react'
 import { Link } from 'react-router-dom'
 
@@ -52,10 +53,10 @@ export default function Connections() {
   const [seedResult, setSeedResult] = useState(null)
 
   const loadSecret = () =>
-    fetch('/api/settings').then(r => r.json()).then(s => setSecret(s.webhook_secret || ''))
+    apiFetch('/api/settings').then(r => r.json()).then(s => setSecret(s.webhook_secret || ''))
 
   const loadEvents = useCallback(() =>
-    fetch('/api/webhook/events')
+    apiFetch('/api/webhook/events')
       .then(r => r.json())
       .then(d => { setEvents(d.events || []); setCounts(d.counts || {}) })
   , [])
@@ -75,7 +76,7 @@ export default function Connections() {
     setTesting(p => ({ ...p, [source]: true }))
     setTestResults(p => ({ ...p, [source]: null }))
     try {
-      const res = await fetch('/api/webhook/test', {
+      const res = await apiFetch('/api/webhook/test', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-Webhook-Secret': secret },
         body: JSON.stringify({ source }),
@@ -501,7 +502,7 @@ export default function Connections() {
                   setSeeding(true)
                   setSeedResult(null)
                   try {
-                    const res = await fetch('/api/webhook/seed-historical', {
+                    const res = await apiFetch('/api/webhook/seed-historical', {
                       method: 'POST',
                       headers: { 'Content-Type': 'application/json', 'X-Webhook-Secret': secret },
                     })

@@ -11,7 +11,7 @@ function MonthlySpend({ marketingCategory, recruitingCategory }) {
   const currentMonth = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`
 
   useEffect(() => {
-    fetch(`/api/expenses?year=${year}`)
+    apiFetch(`/api/expenses?year=${year}`)
       .then(r => r.json())
       .then(rows => {
         const s = {}
@@ -38,14 +38,14 @@ function MonthlySpend({ marketingCategory, recruitingCategory }) {
       for (const month of months) {
         const s = spend[month] || {}
         if (s.marketing !== undefined && s.marketing !== '') {
-          await fetch('/api/expenses', {
+          await apiFetch('/api/expenses', {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ month, category: marketingCategory, amount: parseFloat(s.marketing) || 0 }),
           })
         }
         if (s.recruiting !== undefined && s.recruiting !== '') {
-          await fetch('/api/expenses', {
+          await apiFetch('/api/expenses', {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ month, category: recruitingCategory, amount: parseFloat(s.recruiting) || 0 }),
@@ -385,7 +385,7 @@ export default function Settings() {
   const [loaded, setLoaded] = useState(false)
 
   useEffect(() => {
-    fetch('/api/settings')
+    apiFetch('/api/settings')
       .then(r => r.json())
       .then(data => {
         setValues(data)
@@ -397,7 +397,7 @@ export default function Settings() {
     e.preventDefault()
     setStatus('saving')
     try {
-      const res = await fetch('/api/settings', {
+      const res = await apiFetch('/api/settings', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(values),

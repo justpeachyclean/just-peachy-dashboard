@@ -1,3 +1,4 @@
+import { apiFetch } from '../AuthContext'
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 
@@ -74,17 +75,17 @@ export default function ClientNurture() {
   const [addWbForm, setAddWbForm] = useState({ client_name: '', reason_code: 'T1', cancel_date: '', next_contact: '' })
 
   const loadCare = () =>
-    fetch(`/api/care?status=all`).then(r => r.json()).then(setCareData)
+    apiFetch(`/api/care?status=all`).then(r => r.json()).then(setCareData)
 
   const loadWb = () =>
-    fetch('/api/nurture').then(r => r.json()).then(setWbClients)
+    apiFetch('/api/nurture').then(r => r.json()).then(setWbClients)
 
   useEffect(() => { loadCare(); loadWb() }, [])
 
   // ── Care handlers ─────────────────────────────────────────────────────────
   const addCare = async (e) => {
     e.preventDefault()
-    await fetch('/api/care', {
+    await apiFetch('/api/care', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(addCareForm),
@@ -95,7 +96,7 @@ export default function ClientNurture() {
   }
 
   const completeCare = async (item) => {
-    await fetch(`/api/care/${item.id}`, {
+    await apiFetch(`/api/care/${item.id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ completed: 1, completed_date: new Date().toISOString().split('T')[0] }),
@@ -104,7 +105,7 @@ export default function ClientNurture() {
   }
 
   const saveCareEdit = async (id) => {
-    await fetch(`/api/care/${id}`, {
+    await apiFetch(`/api/care/${id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(editCareForm),
@@ -115,14 +116,14 @@ export default function ClientNurture() {
 
   const deleteCare = async (item) => {
     if (!window.confirm(`Remove ${item.client_name} from the care queue?`)) return
-    await fetch(`/api/care/${item.id}`, { method: 'DELETE' })
+    await apiFetch(`/api/care/${item.id}`, { method: 'DELETE' })
     loadCare()
   }
 
   // ── Win-back handlers ─────────────────────────────────────────────────────
   const patchWb = async (id, updates) => {
     setWbSaving(p => ({ ...p, [id]: true }))
-    await fetch(`/api/nurture/${id}`, {
+    await apiFetch(`/api/nurture/${id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(updates),
@@ -139,13 +140,13 @@ export default function ClientNurture() {
 
   const deleteWb = async (c) => {
     if (!window.confirm(`Remove ${c.client_name || 'this client'} from the win-back queue?`)) return
-    await fetch(`/api/nurture/${c.id}`, { method: 'DELETE' })
+    await apiFetch(`/api/nurture/${c.id}`, { method: 'DELETE' })
     loadWb()
   }
 
   const handleAddWb = async (e) => {
     e.preventDefault()
-    await fetch('/api/nurture', {
+    await apiFetch('/api/nurture', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(addWbForm),

@@ -1,3 +1,4 @@
+import { apiFetch } from '../AuthContext'
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 
@@ -100,7 +101,7 @@ export default function Leads() {
   const load = () => {
     const params = new URLSearchParams({ year: filter.year, limit: 2000 })
     if (filter.month) params.set('month', `${filter.year}-${filter.month}`)
-    fetch(`/api/leads?${params}`)
+    apiFetch(`/api/leads?${params}`)
       .then(r => r.json())
       .then(data => {
         setLeads(data)
@@ -143,9 +144,9 @@ export default function Leads() {
       source: 'manual',
     }
     if (editId) {
-      await fetch(`/api/leads/${editId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+      await apiFetch(`/api/leads/${editId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
     } else {
-      await fetch('/api/leads', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+      await apiFetch('/api/leads', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
     }
     setSaving(false)
     setShowForm(false)
@@ -156,7 +157,7 @@ export default function Leads() {
 
   const del = async id => {
     if (!confirm('Remove this record?')) return
-    await fetch(`/api/leads/${id}`, { method: 'DELETE' })
+    await apiFetch(`/api/leads/${id}`, { method: 'DELETE' })
     load()
   }
 

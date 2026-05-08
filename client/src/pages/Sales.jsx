@@ -1,3 +1,4 @@
+import { apiFetch } from '../AuthContext'
 import { useState, useEffect } from 'react'
 import { exportCsv } from '../utils/exportCsv'
 
@@ -41,7 +42,7 @@ export default function Sales() {
   const [saveMsg, setSaveMsg] = useState('')
 
   const load = () =>
-    fetch('/api/sales?limit=12')
+    apiFetch('/api/sales?limit=12')
       .then(r => r.json())
       .then(setRows)
       .catch(setError)
@@ -74,7 +75,7 @@ export default function Sales() {
           payload[k] = payload[k] !== '' && payload[k] !== undefined ? parseFloat(payload[k]) || 0 : undefined
         }
       })
-      const res = await fetch('/api/sales', {
+      const res = await apiFetch('/api/sales', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),

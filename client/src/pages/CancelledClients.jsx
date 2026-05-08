@@ -1,3 +1,4 @@
+import { apiFetch } from '../AuthContext'
 import { useState, useEffect } from 'react'
 
 const CATEGORY_COLORS = {
@@ -90,7 +91,7 @@ function CancelRow({ row: r, onSaved }) {
     // Always send calculated values if we have price + freq
     if (liveAnnual)  payload.annual_value_lost    = liveAnnual
     if (liveMonthly) payload.revenue_lost_monthly = liveMonthly
-    await fetch(`/api/cancellations/${r.id}`, {
+    await apiFetch(`/api/cancellations/${r.id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
@@ -271,7 +272,7 @@ export default function CancelledClients() {
   const [filter, setFilter] = useState('')
 
   const load = () =>
-    fetch(`/api/cancellations?year=${selYear}`)
+    apiFetch(`/api/cancellations?year=${selYear}`)
       .then(r => r.json())
       .then(setData)
 
@@ -283,7 +284,7 @@ export default function CancelledClients() {
     e.preventDefault()
     setSaving(true)
     const { monthly, annual } = calcLoss(form.price_per_visit, form.frequency)
-    await fetch('/api/cancellations', {
+    await apiFetch('/api/cancellations', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({

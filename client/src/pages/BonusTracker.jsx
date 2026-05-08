@@ -1,3 +1,4 @@
+import { apiFetch } from '../AuthContext'
 import { useState, useEffect } from 'react'
 import { exportCsv } from '../utils/exportCsv'
 
@@ -66,9 +67,9 @@ export default function BonusTracker() {
 
   const loadAll = () => {
     Promise.all([
-      fetch('/api/bonus/reps').then(r => r.json()),
-      fetch(`/api/bonus/records?year=${year}`).then(r => r.json()),
-      fetch('/api/bonus/payout-calendar').then(r => r.json()),
+      apiFetch('/api/bonus/reps').then(r => r.json()),
+      apiFetch(`/api/bonus/records?year=${year}`).then(r => r.json()),
+      apiFetch('/api/bonus/payout-calendar').then(r => r.json()),
     ])
       .then(([r, rec, cal]) => { setReps(r); setRecords(rec); setCalendar(cal) })
       .catch(setError)
@@ -156,7 +157,7 @@ export default function BonusTracker() {
         recurring_closed: parseInt(recordForm.recurring_closed) || 0,
         weekly_biweekly_closed: parseInt(recordForm.weekly_biweekly_closed) || 0,
       }
-      const res = await fetch('/api/bonus/records', {
+      const res = await apiFetch('/api/bonus/records', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
@@ -174,7 +175,7 @@ export default function BonusTracker() {
   }
 
   const markPaid = async (repId, month) => {
-    await fetch('/api/bonus/records/pay', {
+    await apiFetch('/api/bonus/records/pay', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ rep_id: repId, month }),

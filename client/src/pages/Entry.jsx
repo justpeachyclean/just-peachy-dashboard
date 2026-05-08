@@ -1,3 +1,4 @@
+import { apiFetch } from '../AuthContext'
 import { useState } from 'react'
 
 const today = () => new Date().toISOString().split('T')[0]
@@ -42,7 +43,7 @@ export default function Entry() {
     }
 
     try {
-      const res = await fetch('/api/entry/manual', {
+      const res = await apiFetch('/api/entry/manual', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
@@ -58,7 +59,7 @@ export default function Entry() {
   }
 
   const loadRecent = async () => {
-    const res = await fetch('/api/entry/manual?limit=10')
+    const res = await apiFetch('/api/entry/manual?limit=10')
     const data = await res.json()
     setRecentEntries(data)
     setShowRecent(true)

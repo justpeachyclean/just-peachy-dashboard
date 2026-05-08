@@ -367,6 +367,80 @@ router.post('/seed-historical', (req, res) => {
   res.json({ ok: true, seeded: results })
 })
 
+// POST /api/webhook/hiring  — GHL workflow fires when candidate stage changes in Woot Recruit
+router.post('/hiring', (req, res) => {
+  if (!verifySecret(req, res)) return
+
+  const payload = req.body
+  const {
+    contact_id,
+    applicant_name,
+    phone,
+    email,
+    stage,          // applied | phone_screen | interviewed | offered | hired | rejected | no_show
+    stage_date,
+    position,
+    notes,
+    source = 'woot',
+  } = payload
+
+  const eDate = stage_date ?? new Date().toISOString().split('T')[0]
+  const extId = contact_id ?? null
+
+  // Map common GHL stage names to our stage values
+  const STAGE_MAP = {
+    'new':           'applied',
+    'new lead':      'applied',
+    'applied':       'applied',
+    'phone screen':  'phone_screen',
+    'phone_screen':  'phone_screen',
+    'scheduled':     'phone_screen',
+    'interview':     'interviewed',
+    'interviewed':   'interviewed',
+    'offer':         'offered',
+    'offered':       'offered',
+    'hired':         'hired',
+    'won':           'hired',
+    'rejected':      'rejected',
+    'lost':          'rejected',
+    'no show':       'no_show',
+    'no_show':       'no_show',
+    'no-show':       'no_show',
+  }
+  const mappedStage = STAGE_MAP[(stage || '').toLowerCase()] ?? stage ?? 'applied'
+  const isHired = mappedStage === 'hired'
+  const isNoShow = mappedStage === 'no_show'
+
+  if (extId) {
+    // Upsert by contact_id
+    const existing = db.prepare('SELECT id FROM hiring_pipeline WHERE external_id = ?').get(extId)
+    if (existing) {
+      db.prepare(`
+        UPDATE hiring_pipeline SET
+          stage = ?, stage_date = ?, hired = ?, no_show = ?,
+          hire_date = CASE WHEN ? = 1 THEN ? ELSE hire_date END,
+          notes = COALESCE(?, notes), position = COALESCE(?, position),
+          raw_payload = ?, updated_at = datetime('now')
+        WHERE external_id = ?
+      `).run(mappedStage, eDate, isHired ? 1 : 0, isNoShow ? 1 : 0, isHired ? 1 : 0, eDate, notes ?? null, position ?? null, JSON.stringify(payload), extId)
+    } else {
+      db.prepare(`
+        INSERT INTO hiring_pipeline
+          (applicant_name, contact_id, phone, email, stage, stage_date, source, position, notes, hired, no_show, external_id, raw_payload)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+      `).run(applicant_name ?? null, extId, phone ?? null, email ?? null, mappedStage, eDate, source, position ?? null, notes ?? null, isHired ? 1 : 0, isNoShow ? 1 : 0, extId, JSON.stringify(payload))
+    }
+  } else {
+    db.prepare(`
+      INSERT INTO hiring_pipeline
+        (applicant_name, phone, email, stage, stage_date, source, position, notes, hired, no_show, raw_payload)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?)
+    `).run(applicant_name ?? null, phone ?? null, email ?? null, mappedStage, eDate, source, position ?? null, notes ?? null, isHired ? 1 : 0, isNoShow ? 1 : 0, JSON.stringify(payload))
+  }
+
+  res.json({ ok: true })
+})
+
 // GET /api/webhook/setup-guide
 router.get('/setup-guide', (req, res) => {
   const baseUrl = req.protocol + '://' + req.get('host')
@@ -394,6 +468,12 @@ router.get('/setup-guide', (req, res) => {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-webhook-secret': '(your secret)' },
       payload: { event_type: 'opportunity_won', contact_id: '{{Contact ID}}', client_name: '{{Contact Name}}', rep_name: '{{Assigned User}}', client_freq: '{{Frequency}}', price: '{{Deal Value}}', event_date: '{{Close Date YYYY-MM-DD}}' }
+    },
+    hiring_stage_change: {
+      url: `${baseUrl}/api/webhook/hiring`,
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-webhook-secret': '(your secret)' },
+      payload: { contact_id: '{{Contact ID}}', applicant_name: '{{Contact Name}}', phone: '{{Phone}}', email: '{{Email}}', stage: '{{Pipeline Stage Name}}', stage_date: '{{Date YYYY-MM-DD}}', position: 'Cleaning Technician' }
     }
   })
 })

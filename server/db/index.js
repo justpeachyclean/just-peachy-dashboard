@@ -58,6 +58,25 @@ const migrations = [
     last_login TEXT,
     created_at TEXT DEFAULT (datetime('now'))
   )`,
+  `CREATE TABLE IF NOT EXISTS hiring_pipeline (
+  id             INTEGER PRIMARY KEY AUTOINCREMENT,
+  applicant_name TEXT,
+  contact_id     TEXT,
+  phone          TEXT,
+  email          TEXT,
+  stage          TEXT DEFAULT 'applied',
+  stage_date     TEXT,
+  source         TEXT DEFAULT 'woot',
+  position       TEXT,
+  notes          TEXT,
+  hired          INTEGER DEFAULT 0,
+  hire_date      TEXT,
+  no_show        INTEGER DEFAULT 0,
+  external_id    TEXT UNIQUE,
+  raw_payload    TEXT,
+  created_at     TEXT DEFAULT (datetime('now')),
+  updated_at     TEXT DEFAULT (datetime('now'))
+)`,
 ]
 for (const sql of migrations) {
   try { db.exec(sql) } catch (_) { /* column already exists — safe to ignore */ }

@@ -26,6 +26,7 @@ app.use('/api/nurture',        require('./routes/nurture'))
 app.use('/api/feedback',       require('./routes/feedback'))
 app.use('/api/care',           require('./routes/care'))
 app.use('/api/users',          require('./routes/users'))
+app.use('/api/hiring',         require('./routes/hiring'))
 
 // Health check
 app.get('/api/health', (req, res) => {

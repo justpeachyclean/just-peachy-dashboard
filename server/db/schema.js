@@ -183,6 +183,27 @@ CREATE TABLE IF NOT EXISTS client_care (
   updated_at     TEXT DEFAULT (datetime('now'))
 );
 
+-- Hiring pipeline applicants (auto-populated from Woot Recruit / GHL workflows)
+CREATE TABLE IF NOT EXISTS hiring_pipeline (
+  id             INTEGER PRIMARY KEY AUTOINCREMENT,
+  applicant_name TEXT,
+  contact_id     TEXT,
+  phone          TEXT,
+  email          TEXT,
+  stage          TEXT DEFAULT 'applied',
+  stage_date     TEXT,
+  source         TEXT DEFAULT 'woot',
+  position       TEXT,
+  notes          TEXT,
+  hired          INTEGER DEFAULT 0,
+  hire_date      TEXT,
+  no_show        INTEGER DEFAULT 0,
+  external_id    TEXT UNIQUE,
+  raw_payload    TEXT,
+  created_at     TEXT DEFAULT (datetime('now')),
+  updated_at     TEXT DEFAULT (datetime('now'))
+);
+
 -- Team user accounts
 CREATE TABLE IF NOT EXISTS users (
   id            INTEGER PRIMARY KEY AUTOINCREMENT,

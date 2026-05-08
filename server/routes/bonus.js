@@ -147,6 +147,58 @@ router.patch('/records/pay', (req, res) => {
   res.json({ ok: true })
 })
 
+// POST /api/bonus/auto-calculate  — calculate bonus records for all active reps from lead_records
+router.post('/auto-calculate', (req, res) => {
+  const { month } = req.body
+  if (!month) return res.status(400).json({ error: 'month required' })
+
+  const reps = db.prepare('SELECT * FROM sales_reps WHERE active=1').all()
+  const results = []
+
+  for (const rep of reps) {
+    const counts = db.prepare(`
+      SELECT
+        COUNT(CASE WHEN price_per_clean IS NOT NULL OR quote_amount IS NOT NULL THEN 1 END) AS quotes_given,
+        COUNT(CASE WHEN converted=1 THEN 1 END) AS closed_sales,
+        COUNT(CASE WHEN converted=1 AND frequency NOT IN ('one_type','one-time','one time','') THEN 1 END) AS recurring_closed,
+        COUNT(CASE WHEN converted=1 AND LOWER(frequency) IN ('weekly','biweekly','bi-weekly') THEN 1 END) AS weekly_biweekly_closed
+      FROM lead_records WHERE month = ? AND rep_name = ? COLLATE NOCASE
+    `).get(month, rep.name)
+
+    if (counts.closed_sales > 0 || counts.quotes_given > 0) {
+      const closeRate = counts.quotes_given > 0 ? counts.closed_sales / counts.quotes_given : 0
+      const recurringRatio = counts.recurring_closed > 0 ? counts.weekly_biweekly_closed / counts.recurring_closed : 0
+
+      let tier = 0, bonus_amount = 0
+      if (closeRate >= 0.40) {
+        if (recurringRatio >= 0.50) { tier = 3; bonus_amount = counts.closed_sales * 75 }
+        else if (recurringRatio >= 0.30) { tier = 2; bonus_amount = counts.closed_sales * 50 }
+        else { tier = 1; bonus_amount = counts.closed_sales * 25 }
+      }
+
+      db.prepare(`
+        INSERT INTO bonus_records (rep_id, month, quotes_given, closed_sales, recurring_closed, weekly_biweekly_closed, close_rate, recurring_ratio, tier, bonus_amount, updated_at)
+        VALUES (?,?,?,?,?,?,?,?,?,?,datetime('now'))
+        ON CONFLICT(rep_id, month) DO UPDATE SET
+          quotes_given=excluded.quotes_given,
+          closed_sales=excluded.closed_sales,
+          recurring_closed=excluded.recurring_closed,
+          weekly_biweekly_closed=excluded.weekly_biweekly_closed,
+          close_rate=excluded.close_rate,
+          recurring_ratio=excluded.recurring_ratio,
+          tier=excluded.tier,
+          bonus_amount=excluded.bonus_amount,
+          updated_at=datetime('now')
+        WHERE status != 'paid'
+      `).run(rep.id, month, counts.quotes_given, counts.closed_sales, counts.recurring_closed, counts.weekly_biweekly_closed, closeRate, recurringRatio, tier, bonus_amount)
+
+      results.push({ rep: rep.name, ...counts, tier, bonus_amount })
+    }
+  }
+
+  res.json({ ok: true, month, calculated: results.length, results })
+})
+
 // GET /api/bonus/payout-calendar  — pending payouts in next 6 months
 router.get('/payout-calendar', (req, res) => {
   const now = new Date()

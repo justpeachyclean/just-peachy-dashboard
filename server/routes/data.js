@@ -37,16 +37,20 @@ router.get('/summary', (req, res) => {
   `).get(monthStart, monthEnd)
   const cancellations = ms?.cancellations ?? mcCancellations.total
 
-  // Lead funnel: monthly_sales > ghl events
-  const ghlLeads = db.prepare(`
-    SELECT event_type, COUNT(*) AS cnt FROM ghl_events
-    WHERE event_date BETWEEN ? AND ? GROUP BY event_type
-  `).all(monthStart, monthEnd)
-  const leadMap = Object.fromEntries(ghlLeads.map(l => [l.event_type, l.cnt]))
+  // Lead funnel: live counts from lead_records take priority over monthly_sales
+  const leadCounts = db.prepare(`
+    SELECT
+      COUNT(*) AS leads_in,
+      COUNT(CASE WHEN price_per_clean IS NOT NULL OR quote_amount IS NOT NULL THEN 1 END) AS leads_quoted,
+      COUNT(CASE WHEN converted=1 THEN 1 END) AS leads_closed,
+      COUNT(CASE WHEN converted=1 AND frequency NOT IN ('one_time','one-time','one time','') THEN 1 END) AS recurring_closed
+    FROM lead_records WHERE month = ?
+  `).get(month)
 
-  const leadsIn     = ms?.leads_in     ?? (leadMap['new_lead'] || 0)
-  const leadsQuoted = ms?.leads_quoted ?? (leadMap['quoted'] || 0)
-  const leadsClosed = ms?.leads_closed ?? (leadMap['closed'] || 0)
+  const leadsIn       = leadCounts.leads_in > 0 ? leadCounts.leads_in       : (ms?.leads_in     ?? 0)
+  const leadsQuoted   = leadCounts.leads_in > 0 ? leadCounts.leads_quoted   : (ms?.leads_quoted ?? 0)
+  const leadsClosed   = leadCounts.leads_in > 0 ? leadCounts.leads_closed   : (ms?.leads_closed ?? 0)
+  const recurringClosed = leadCounts.leads_in > 0 ? leadCounts.recurring_closed : (ms?.recurring_closed ?? 0)
 
   // Marketing spend: QB > monthly_sales > manual entries
   const qbMarketing = db.prepare(`
@@ -88,7 +92,7 @@ router.get('/summary', (req, res) => {
     leads_in: leadsIn,
     leads_quoted: leadsQuoted,
     leads_closed: leadsClosed,
-    recurring_closed: ms?.recurring_closed ?? 0,
+    recurring_closed: recurringClosed,
     initial_cleans: ms?.initial_cleans ?? 0,
     retained: ms?.retained ?? 0,
     skips: ms?.skips ?? 0,
@@ -148,12 +152,27 @@ router.get('/monthly', (req, res) => {
 
     const revenue = ms?.revenue > 0 ? ms.revenue : mcRev.total
 
-    const closeRate = ms && ms.leads_quoted > 0
-      ? ms.leads_closed / ms.leads_quoted
+    // Lead counts from lead_records take priority over monthly_sales
+    const mlc = db.prepare(`
+      SELECT
+        COUNT(*) AS leads_in,
+        COUNT(CASE WHEN price_per_clean IS NOT NULL OR quote_amount IS NOT NULL THEN 1 END) AS leads_quoted,
+        COUNT(CASE WHEN converted=1 THEN 1 END) AS leads_closed,
+        COUNT(CASE WHEN converted=1 AND frequency NOT IN ('one_time','one-time','one time','') THEN 1 END) AS recurring_closed
+      FROM lead_records WHERE month = ?
+    `).get(month)
+
+    const mLeadsIn       = mlc.leads_in > 0 ? mlc.leads_in       : (ms?.leads_in     ?? 0)
+    const mLeadsQuoted   = mlc.leads_in > 0 ? mlc.leads_quoted   : (ms?.leads_quoted ?? 0)
+    const mLeadsClosed   = mlc.leads_in > 0 ? mlc.leads_closed   : (ms?.leads_closed ?? 0)
+    const mRecurringClosed = mlc.leads_in > 0 ? mlc.recurring_closed : (ms?.recurring_closed ?? 0)
+
+    const closeRate = mLeadsQuoted > 0
+      ? mLeadsClosed / mLeadsQuoted
       : null
 
-    const recurringRatio = ms && ms.leads_closed > 0
-      ? ms.recurring_closed / ms.leads_closed
+    const recurringRatio = mLeadsClosed > 0
+      ? mRecurringClosed / mLeadsClosed
       : null
 
     return {
@@ -163,10 +182,10 @@ router.get('/monthly', (req, res) => {
       goal: monthlyGoal,
       stretch_goal: monthlyStretch,
       avg_rge: avgRge ? Math.round(avgRge * 10) / 10 : null,
-      leads_in: ms?.leads_in ?? 0,
-      leads_quoted: ms?.leads_quoted ?? 0,
-      leads_closed: ms?.leads_closed ?? 0,
-      recurring_closed: ms?.recurring_closed ?? 0,
+      leads_in: mLeadsIn,
+      leads_quoted: mLeadsQuoted,
+      leads_closed: mLeadsClosed,
+      recurring_closed: mRecurringClosed,
       initial_cleans: ms?.initial_cleans ?? 0,
       move_out_cleans: ms?.move_out_cleans ?? 0,
       retained: ms?.retained ?? 0,
@@ -210,6 +229,17 @@ router.get('/economics', (req, res) => {
       COUNT(*) AS months_with_data
     FROM monthly_sales WHERE month LIKE ? AND month <= ?
   `).get(`${year}-%`, currentMonth)
+
+  // YTD lead counts from lead_records (takes priority over monthly_sales)
+  const ytdLeadCounts = db.prepare(`
+    SELECT
+      COUNT(*) AS leads_in,
+      COUNT(CASE WHEN converted=1 THEN 1 END) AS leads_closed
+    FROM lead_records WHERE month LIKE ? AND month <= ?
+  `).get(`${year}-%`, currentMonth)
+
+  const ytdLeadsIn     = ytdLeadCounts.leads_in > 0 ? ytdLeadCounts.leads_in     : ytdSales.leads_in
+  const ytdLeadsClosed = ytdLeadCounts.leads_in > 0 ? ytdLeadCounts.leads_closed : ytdSales.leads_closed
 
   // Avg recurring clients across months that have a snapshot
   const clientSnap = db.prepare(`
@@ -269,12 +299,12 @@ router.get('/economics', (req, res) => {
     ? avgRevenuePerClient * avgLifetimeMonths
     : null
 
-  const cpl = ytdSales.leads_in > 0 && marketingSpend > 0
-    ? marketingSpend / ytdSales.leads_in
+  const cpl = ytdLeadsIn > 0 && marketingSpend > 0
+    ? marketingSpend / ytdLeadsIn
     : null
 
-  const cac = ytdSales.leads_closed > 0 && marketingSpend > 0
-    ? marketingSpend / ytdSales.leads_closed
+  const cac = ytdLeadsClosed > 0 && marketingSpend > 0
+    ? marketingSpend / ytdLeadsClosed
     : null
 
   const ltvCacRatio = ltv && cac ? ltv / cac : null
@@ -306,8 +336,8 @@ router.get('/economics', (req, res) => {
       marketing_spend: marketingSpend,
       recruiting_spend: recruitingSpend,
       training_spend: trainingSpend,
-      leads_in: ytdSales.leads_in,
-      leads_closed: ytdSales.leads_closed,
+      leads_in: ytdLeadsIn,
+      leads_closed: ytdLeadsClosed,
       cancellations: ytdSales.cancellations,
       new_hires: manualYTD.new_hires,
       quit: manualYTD.quit,

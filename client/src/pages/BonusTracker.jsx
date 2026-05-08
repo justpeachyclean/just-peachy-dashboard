@@ -53,6 +53,13 @@ export default function BonusTracker() {
   const [error, setError] = useState(null)
 
   // Rep modal
+  const [autoCalcMsg, setAutoCalcMsg] = useState('')
+  const [autoCalcLoading, setAutoCalcLoading] = useState(false)
+  const [autoCalcMonth, setAutoCalcMonth] = useState(() => {
+    const n = new Date()
+    return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}`
+  })
+
   const [showRepForm, setShowRepForm] = useState(false)
   const [editRep, setEditRep] = useState(null)
   const [repForm, setRepForm] = useState({ name: '', email: '', start_date: '', active: 1 })
@@ -183,6 +190,26 @@ export default function BonusTracker() {
     loadAll()
   }
 
+  const autoCalculate = async () => {
+    setAutoCalcLoading(true)
+    setAutoCalcMsg('')
+    try {
+      const res = await apiFetch('/api/bonus/auto-calculate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ month: autoCalcMonth }),
+      })
+      if (!res.ok) throw new Error(await res.text())
+      const data = await res.json()
+      setAutoCalcMsg(`Calculated ${data.calculated} rep${data.calculated !== 1 ? 's' : ''} for ${autoCalcMonth}`)
+      loadAll()
+    } catch (err) {
+      setAutoCalcMsg(`Error: ${err.message}`)
+    } finally {
+      setAutoCalcLoading(false)
+    }
+  }
+
   if (error) return (
     <div className="card text-center py-12">
       <p className="text-danger font-medium">Could not load bonus data.</p>
@@ -202,7 +229,23 @@ export default function BonusTracker() {
           <h1 className="text-2xl font-bold text-ink">Bonus Tracker</h1>
           <p className="text-sm text-gray-500 mt-0.5">Per-rep tier calculations &amp; payout calendar</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap justify-end">
+          <div className="flex items-center gap-1">
+            <input
+              type="month"
+              className="form-input text-sm py-1.5 w-36"
+              value={autoCalcMonth}
+              onChange={e => setAutoCalcMonth(e.target.value)}
+            />
+            <button
+              onClick={autoCalculate}
+              disabled={autoCalcLoading}
+              className="text-sm border border-gray-200 bg-white text-gray-600 hover:text-ink font-medium px-3 py-2 rounded-lg transition-colors whitespace-nowrap"
+              title="Auto-calculate bonus records from lead_records data"
+            >
+              {autoCalcLoading ? 'Calculating…' : 'Auto-Calculate from Leads'}
+            </button>
+          </div>
           <button
             onClick={() => exportCsv(`jpc-bonus-${new Date().toISOString().slice(0,10)}.csv`, records.map(r => ({ month: r.month, rep: r.rep_name, tier: r.tier, bonus: r.bonus_amount, streak_bonus: r.streak_bonus, paid: r.paid ? 'Yes' : 'No', payout_month: r.payout_month })))}
             className="btn-secondary text-sm"
@@ -211,6 +254,13 @@ export default function BonusTracker() {
           <button onClick={() => openRepForm()} className="text-sm border border-gray-200 bg-white text-gray-600 hover:text-ink font-medium px-4 py-2 rounded-lg transition-colors">+ Add Rep</button>
         </div>
       </div>
+
+      {/* Auto-calc status message */}
+      {autoCalcMsg && (
+        <div className={`mb-4 px-4 py-2.5 rounded-lg text-sm font-medium ${autoCalcMsg.startsWith('Error') ? 'bg-danger/10 text-danger' : 'bg-ok/10 text-ok'}`}>
+          {autoCalcMsg}
+        </div>
+      )}
 
       {/* Tier reference */}
       <div className="card mb-5">

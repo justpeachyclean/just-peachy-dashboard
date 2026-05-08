@@ -35,6 +35,8 @@ router.post('/ghl', (req, res) => {
 
   if (!event_type) return res.status(400).json({ error: 'event_type required' })
 
+  const eDate = event_date ?? new Date().toISOString().split('T')[0]
+
   db.prepare(`
     INSERT INTO ghl_events (event_type, contact_id, opportunity_id, rep_name, client_freq, event_date, raw_payload)
     VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -44,9 +46,62 @@ router.post('/ghl', (req, res) => {
     opportunity_id ?? null,
     rep_name ?? null,
     client_freq ?? null,
-    event_date ?? new Date().toISOString().split('T')[0],
+    eDate,
     JSON.stringify(payload)
   )
+
+  // Auto-populate lead_records from GHL events
+  const clientName = payload.client_name || contact_id || null
+  const month = eDate.slice(0, 7)
+
+  const NEW_LEAD_TYPES = ['new_lead', 'lead_in', 'lead_inquiry']
+  const QUOTE_TYPES    = ['quote_sent', 'lead_quoted']
+  const WON_TYPES      = ['opportunity_won', 'lead_closed', 'lead_converted']
+  const LOST_TYPES     = ['opportunity_lost', 'lead_lost']
+
+  if (NEW_LEAD_TYPES.includes(event_type)) {
+    db.prepare(`
+      INSERT OR IGNORE INTO lead_records
+        (record_date, client_name, rep_name, frequency, month, converted, source, external_id)
+      VALUES (?, ?, ?, ?, ?, 0, 'ghl', ?)
+    `).run(eDate, clientName, rep_name ?? null, client_freq ?? null, month, contact_id ?? null)
+
+  } else if (QUOTE_TYPES.includes(event_type)) {
+    db.prepare(`
+      INSERT OR IGNORE INTO lead_records
+        (record_date, client_name, rep_name, frequency, month, converted, source, external_id)
+      VALUES (?, ?, ?, ?, ?, 0, 'ghl', ?)
+    `).run(eDate, clientName, rep_name ?? null, client_freq ?? null, month, contact_id ?? null)
+
+    const price = payload.price ?? payload.quote_amount ?? null
+    if (price != null && contact_id) {
+      db.prepare(`
+        UPDATE lead_records SET price_per_clean = ?, quote_amount = ?
+        WHERE external_id = ?
+      `).run(parseFloat(price), parseFloat(price), contact_id)
+    }
+
+  } else if (WON_TYPES.includes(event_type)) {
+    db.prepare(`
+      INSERT OR IGNORE INTO lead_records
+        (record_date, client_name, rep_name, frequency, month, converted, source, external_id)
+      VALUES (?, ?, ?, ?, ?, 0, 'ghl', ?)
+    `).run(eDate, clientName, rep_name ?? null, client_freq ?? null, month, contact_id ?? null)
+
+    if (contact_id) {
+      db.prepare(`
+        UPDATE lead_records SET
+          converted = 1,
+          recurring_retained = CASE WHEN LOWER(COALESCE(frequency,'')) NOT IN ('one_time','one-time','one time','') THEN 1 ELSE 0 END
+        WHERE external_id = ?
+      `).run(contact_id)
+    }
+
+  } else if (LOST_TYPES.includes(event_type)) {
+    if (contact_id) {
+      db.prepare(`UPDATE lead_records SET converted = 0 WHERE external_id = ?`).run(contact_id)
+    }
+  }
 
   res.json({ ok: true })
 })
@@ -56,9 +111,11 @@ router.post('/maidcentral', (req, res) => {
   if (!verifySecret(req, res)) return
 
   const payload = req.body
-  const { event_type, client_id, amount, event_date } = payload
+  const { event_type, client_id, amount, event_date, client_count, date, total_revenue, job_count, recurring_clients } = payload
 
   if (!event_type) return res.status(400).json({ error: 'event_type required' })
+
+  const eDate = event_date ?? date ?? new Date().toISOString().split('T')[0]
 
   db.prepare(`
     INSERT INTO maidcentral_events (event_type, client_id, amount, event_date, raw_payload)
@@ -67,9 +124,33 @@ router.post('/maidcentral', (req, res) => {
     event_type,
     client_id ?? null,
     amount ?? null,
-    event_date ?? new Date().toISOString().split('T')[0],
+    eDate,
     JSON.stringify(payload)
   )
+
+  const month = eDate.slice(0, 7)
+
+  if (event_type === 'job_completed' && amount != null) {
+    db.prepare(`
+      INSERT INTO monthly_sales (month, revenue) VALUES (?, ?)
+      ON CONFLICT(month) DO UPDATE SET revenue = revenue + excluded.revenue, updated_at = datetime('now')
+    `).run(month, parseFloat(amount))
+  }
+
+  if (event_type === 'recurring_client_snapshot' && client_count != null) {
+    db.prepare(`
+      UPDATE monthly_sales SET recurring_clients = ? WHERE month = ?
+    `).run(parseInt(client_count), month)
+  }
+
+  if (event_type === 'daily_revenue_summary') {
+    const rev = total_revenue != null ? parseFloat(total_revenue) : null
+    if (rev != null && rev > 0) {
+      db.prepare(`
+        UPDATE monthly_sales SET revenue = ? WHERE month = ?
+      `).run(rev, month)
+    }
+  }
 
   res.json({ ok: true })
 })
@@ -276,6 +357,37 @@ router.post('/seed-historical', (req, res) => {
   cancelTx()
 
   res.json({ ok: true, seeded: results })
+})
+
+// GET /api/webhook/setup-guide
+router.get('/setup-guide', (req, res) => {
+  const baseUrl = req.protocol + '://' + req.get('host')
+  res.json({
+    maidcentral_job_completed: {
+      url: `${baseUrl}/api/webhook/maidcentral`,
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-webhook-secret': '(your secret)' },
+      payload: { event_type: 'job_completed', client_id: '{{Client ID}}', client_name: '{{Client Name}}', amount: '{{Job Amount}}', event_date: '{{Completion Date YYYY-MM-DD}}', frequency: '{{Service Frequency}}' }
+    },
+    maidcentral_cancellation: {
+      url: `${baseUrl}/api/webhook/cancellation`,
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-webhook-secret': '(your secret)' },
+      payload: { client_id: '{{Client ID}}', client_name: '{{Client Name}}', cancel_date: '{{Cancel Date YYYY-MM-DD}}', frequency: '{{Frequency}}', revenue_lost_monthly: '{{Monthly Revenue}}' }
+    },
+    ghl_new_lead: {
+      url: `${baseUrl}/api/webhook/ghl`,
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-webhook-secret': '(your secret)' },
+      payload: { event_type: 'new_lead', contact_id: '{{Contact ID}}', client_name: '{{Contact Name}}', rep_name: '{{Assigned User}}', client_freq: '{{Frequency Custom Field}}', event_date: '{{Date YYYY-MM-DD}}' }
+    },
+    ghl_lead_closed: {
+      url: `${baseUrl}/api/webhook/ghl`,
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-webhook-secret': '(your secret)' },
+      payload: { event_type: 'opportunity_won', contact_id: '{{Contact ID}}', client_name: '{{Contact Name}}', rep_name: '{{Assigned User}}', client_freq: '{{Frequency}}', price: '{{Deal Value}}', event_date: '{{Close Date YYYY-MM-DD}}' }
+    }
+  })
 })
 
 module.exports = router

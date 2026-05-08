@@ -59,9 +59,33 @@ router.post('/ghl', (req, res) => {
   const usedBefore = payload.used_before ?? null  // pass 'Yes'/'No' from GHL custom field
 
   const NEW_LEAD_TYPES = ['new_lead', 'lead_in', 'lead_inquiry']
-  const QUOTE_TYPES    = ['quote_sent', 'lead_quoted']
+  const QUOTE_TYPES    = ['quote_sent', 'lead_quoted', 'quote_updated', 'opportunity_updated']
   const WON_TYPES      = ['opportunity_won', 'lead_closed', 'lead_converted']
   const LOST_TYPES     = ['opportunity_lost', 'lead_lost']
+
+  // Helper: update price on a lead, trying external_id first then client_name fallback
+  const price = payload.price ?? payload.quote_amount ?? payload.amount ?? null
+  function applyPrice(whereExtId) {
+    if (price == null) return
+    const p = parseFloat(price)
+    if (whereExtId) {
+      const updated = db.prepare(
+        `UPDATE lead_records SET price_per_clean = ?, quote_amount = ? WHERE external_id = ?`
+      ).run(p, p, whereExtId)
+      if (updated.changes > 0) return
+    }
+    // Fallback: match by client name in the same month (most recent record)
+    if (clientName) {
+      db.prepare(`
+        UPDATE lead_records SET price_per_clean = ?, quote_amount = ?
+        WHERE id = (
+          SELECT id FROM lead_records
+          WHERE LOWER(client_name) = LOWER(?) AND (price_per_clean IS NULL OR price_per_clean = 0)
+          ORDER BY record_date DESC LIMIT 1
+        )
+      `).run(p, p, clientName)
+    }
+  }
 
   if (NEW_LEAD_TYPES.includes(event_type)) {
     db.prepare(`
@@ -69,6 +93,7 @@ router.post('/ghl', (req, res) => {
         (record_date, client_name, rep_name, frequency, month, converted, source, external_id, used_before)
       VALUES (?, ?, ?, ?, ?, 0, 'ghl', ?, ?)
     `).run(eDate, clientName, rep_name ?? null, client_freq ?? null, month, extId, usedBefore)
+    applyPrice(extId)
 
   } else if (QUOTE_TYPES.includes(event_type)) {
     db.prepare(`
@@ -76,12 +101,7 @@ router.post('/ghl', (req, res) => {
         (record_date, client_name, rep_name, frequency, month, converted, source, external_id, used_before)
       VALUES (?, ?, ?, ?, ?, 0, 'ghl', ?, ?)
     `).run(eDate, clientName, rep_name ?? null, client_freq ?? null, month, extId, usedBefore)
-
-    const price = payload.price ?? payload.quote_amount ?? null
-    if (price != null && extId) {
-      db.prepare(`UPDATE lead_records SET price_per_clean = ?, quote_amount = ? WHERE external_id = ?`)
-        .run(parseFloat(price), parseFloat(price), extId)
-    }
+    applyPrice(extId)
 
   } else if (WON_TYPES.includes(event_type)) {
     // Create record if GHL only fires on won (skipped earlier stages)
@@ -90,19 +110,22 @@ router.post('/ghl', (req, res) => {
         (record_date, client_name, rep_name, frequency, month, converted, source, external_id, used_before)
       VALUES (?, ?, ?, ?, ?, 0, 'ghl', ?, ?)
     `).run(eDate, clientName, rep_name ?? null, client_freq ?? null, month, extId, usedBefore)
+    applyPrice(extId)
 
     if (extId) {
-      const price = payload.price ?? payload.quote_amount ?? null
-      if (price != null) {
-        db.prepare(`UPDATE lead_records SET price_per_clean = ?, quote_amount = ? WHERE external_id = ?`)
-          .run(parseFloat(price), parseFloat(price), extId)
-      }
       db.prepare(`
         UPDATE lead_records SET
           converted = 1,
           recurring_retained = CASE WHEN LOWER(COALESCE(frequency,'')) NOT IN ('one_type','one-time','one time','') THEN 1 ELSE 0 END
         WHERE external_id = ?
       `).run(extId)
+    } else if (clientName) {
+      // Fallback: match by name if no external_id
+      db.prepare(`
+        UPDATE lead_records SET converted = 1,
+          recurring_retained = CASE WHEN LOWER(COALESCE(frequency,'')) NOT IN ('one_type','one-time','one time','') THEN 1 ELSE 0 END
+        WHERE id = (SELECT id FROM lead_records WHERE LOWER(client_name) = LOWER(?) ORDER BY record_date DESC LIMIT 1)
+      `).run(clientName)
     }
 
   } else if (LOST_TYPES.includes(event_type)) {

@@ -45,6 +45,9 @@ const migrations = [
   `ALTER TABLE lead_records ADD COLUMN lead_source TEXT`,
   `ALTER TABLE lead_records ADD COLUMN used_before TEXT`,
   `ALTER TABLE lead_records ADD COLUMN reason TEXT`,
+  `ALTER TABLE cancelled_clients ADD COLUMN price_per_visit REAL`,
+  `ALTER TABLE cancelled_clients ADD COLUMN annual_value_lost REAL`,
+  `INSERT OR IGNORE INTO settings (key, value) VALUES ('dashboard_password', '')`,
 ]
 for (const sql of migrations) {
   try { db.exec(sql) } catch (_) { /* column already exists — safe to ignore */ }

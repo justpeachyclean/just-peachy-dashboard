@@ -42,6 +42,19 @@ const CODE_CATEGORIES = {
 
 function fmt$(n) { return n != null ? `$${Math.round(n).toLocaleString()}` : '—' }
 
+const ANNUAL_MULT  = { weekly: 52, biweekly: 26, monthly: 13 }
+const MONTHLY_MULT = { weekly: 4.33, biweekly: 2.17, monthly: 1 }
+
+function calcLoss(price, freq) {
+  if (!price || !freq) return { monthly: null, annual: null }
+  const f = freq.toLowerCase().trim()
+  const am = ANNUAL_MULT[f], mm = MONTHLY_MULT[f]
+  return {
+    monthly: mm ? Math.round(parseFloat(price) * mm * 100) / 100 : null,
+    annual:  am ? Math.round(parseFloat(price) * am) : null,
+  }
+}
+
 function BarRow({ label, value, max, color, extra }) {
   const pct = max > 0 ? Math.round((value / max) * 100) : 0
   return (
@@ -60,16 +73,27 @@ function CancelRow({ row: r, onSaved }) {
   const [open, setOpen] = useState(false)
   const [ed, setEd] = useState({})
   const [saving, setSaving] = useState(false)
+  const [editPrice, setEditPrice] = useState('')
+  const [editFreq, setEditFreq] = useState('')
 
   const cat = r.reason_category || 'Other'
   const set = (k, v) => setEd(p => ({ ...p, [k]: v }))
 
+  // Live calculation in the inline edit
+  const liveFreq  = editFreq  || r.frequency || ''
+  const livePrice = editPrice !== '' ? editPrice : (r.price_per_visit ?? '')
+  const { monthly: liveMonthly, annual: liveAnnual } = calcLoss(livePrice, liveFreq)
+
   const handleSave = async () => {
     setSaving(true)
+    const payload = { ...ed }
+    // Always send calculated values if we have price + freq
+    if (liveAnnual)  payload.annual_value_lost    = liveAnnual
+    if (liveMonthly) payload.revenue_lost_monthly = liveMonthly
     await fetch(`/api/cancellations/${r.id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(ed),
+      body: JSON.stringify(payload),
     })
     setSaving(false)
     setOpen(false)
@@ -106,7 +130,11 @@ function CancelRow({ row: r, onSaved }) {
           }
         </span>
         <span className="hidden md:block text-right text-xs text-gray-500">
-          {r.revenue_lost_monthly ? fmt$(r.revenue_lost_monthly) : '—'}
+          {r.annual_value_lost
+            ? <span className="font-semibold text-ink">{fmt$(r.annual_value_lost)}<span className="text-gray-400 font-normal">/yr</span></span>
+            : r.revenue_lost_monthly
+              ? <span>{fmt$(r.revenue_lost_monthly)}<span className="text-gray-400">/mo</span></span>
+              : '—'}
         </span>
         <span className="text-gray-400 text-xs text-right">{open ? '▲' : '▼'}</span>
       </div>
@@ -167,18 +195,41 @@ function CancelRow({ row: r, onSaved }) {
               />
             </div>
             <div>
-              <label className="form-label text-xs">Monthly Revenue Lost ($)</label>
+              <label className="form-label text-xs">Frequency</label>
+              <select
+                className="form-input py-1 text-sm"
+                defaultValue={r.frequency || ''}
+                onChange={e => { setEditFreq(e.target.value); set('frequency', e.target.value) }}
+              >
+                <option value="">—</option>
+                <option value="weekly">Weekly</option>
+                <option value="biweekly">Biweekly</option>
+                <option value="monthly">Monthly</option>
+              </select>
+            </div>
+            <div>
+              <label className="form-label text-xs">Price Per Visit ($)</label>
               <div className="relative">
                 <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs">$</span>
                 <input
                   type="number" min="0" step="0.01"
                   className="form-input pl-6 py-1 text-sm"
-                  defaultValue={r.revenue_lost_monthly || ''}
+                  defaultValue={r.price_per_visit || ''}
                   placeholder="0"
-                  onChange={e => set('revenue_lost_monthly', e.target.value)}
+                  onChange={e => {
+                    setEditPrice(e.target.value)
+                    set('price_per_visit', e.target.value)
+                  }}
                 />
               </div>
             </div>
+            {/* Live annual value preview */}
+            {liveAnnual && (
+              <div className="sm:col-span-2 flex items-center gap-2 px-3 py-2 bg-red-50 border border-red-100 rounded-lg text-sm">
+                <span className="text-danger font-bold">{fmt$(liveAnnual)}/yr lost</span>
+                <span className="text-gray-400 text-xs">· {fmt$(liveMonthly)}/mo · {liveFreq}</span>
+              </div>
+            )}
             <div className="flex items-center gap-2 pt-1">
               <input
                 type="checkbox"
@@ -206,7 +257,7 @@ const BLANK = {
   client_name:'', cancel_date: new Date().toISOString().split('T')[0],
   reason_code:'', client_quote:'', save_attempted: false,
   save_outcome:'Lost', solution_offered:'', frequency:'',
-  recurring_months:'', revenue_lost_monthly:'', notes:'',
+  recurring_months:'', price_per_visit:'', notes:'',
 }
 
 export default function CancelledClients() {
@@ -231,6 +282,7 @@ export default function CancelledClients() {
   const handleSubmit = async (e) => {
     e.preventDefault()
     setSaving(true)
+    const { monthly, annual } = calcLoss(form.price_per_visit, form.frequency)
     await fetch('/api/cancellations', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -238,7 +290,9 @@ export default function CancelledClients() {
         ...form,
         save_attempted: form.save_attempted ? 1 : 0,
         recurring_months: form.recurring_months ? parseInt(form.recurring_months) : null,
-        revenue_lost_monthly: form.revenue_lost_monthly ? parseFloat(form.revenue_lost_monthly) : null,
+        price_per_visit: form.price_per_visit ? parseFloat(form.price_per_visit) : null,
+        revenue_lost_monthly: monthly ?? (form.revenue_lost_monthly ? parseFloat(form.revenue_lost_monthly) : null),
+        annual_value_lost: annual ?? null,
       }),
     })
     setSaving(false)
@@ -322,10 +376,10 @@ export default function CancelledClients() {
                 <label className="form-label">Frequency</label>
                 <select className="form-input" value={form.frequency} onChange={e => set('frequency', e.target.value)}>
                   <option value="">—</option>
-                  <option>weekly</option>
-                  <option>biweekly</option>
-                  <option>monthly</option>
-                  <option>one_time</option>
+                  <option value="weekly">Weekly</option>
+                  <option value="biweekly">Biweekly</option>
+                  <option value="monthly">Monthly</option>
+                  <option value="one_time">One-Time</option>
                 </select>
               </div>
               <div>
@@ -345,16 +399,27 @@ export default function CancelledClients() {
                 <input className="form-input" value={form.solution_offered} onChange={e => set('solution_offered', e.target.value)} placeholder="Tech swap / Reclean / Price explanation…" />
               </div>
               <div>
-                <label className="form-label">Monthly Revenue Lost ($)</label>
+                <label className="form-label">Price Per Visit ($)</label>
                 <div className="relative">
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">$</span>
-                  <input type="number" min="0" step="0.01" className="form-input pl-7" value={form.revenue_lost_monthly} onChange={e => set('revenue_lost_monthly', e.target.value)} placeholder="0" />
+                  <input type="number" min="0" step="0.01" className="form-input pl-7" value={form.price_per_visit || ''} onChange={e => set('price_per_visit', e.target.value)} placeholder="e.g. 185" />
                 </div>
               </div>
               <div>
                 <label className="form-label">Months as Client</label>
                 <input type="number" min="0" className="form-input" value={form.recurring_months} onChange={e => set('recurring_months', e.target.value)} placeholder="0" />
               </div>
+              {/* Live annual value preview */}
+              {(() => {
+                const { monthly, annual } = calcLoss(form.price_per_visit, form.frequency)
+                if (!annual) return null
+                return (
+                  <div className="col-span-2 flex items-center gap-2 px-3 py-2 bg-red-50 border border-red-100 rounded-lg text-sm">
+                    <span className="text-danger font-bold">{fmt$(annual)}/yr lost</span>
+                    <span className="text-gray-400 text-xs">· {fmt$(monthly)}/mo · {form.frequency}</span>
+                  </div>
+                )
+              })()}
               <div className="flex items-center gap-2 pt-5">
                 <input type="checkbox" id="save_attempted" checked={form.save_attempted} onChange={e => set('save_attempted', e.target.checked)} className="accent-brand" />
                 <label htmlFor="save_attempted" className="text-sm text-gray-700 cursor-pointer">Save attempt was made</label>
@@ -379,7 +444,7 @@ export default function CancelledClients() {
           { label: 'Total Cancelled', value: stats.total ?? '—', sub: `${selYear}` },
           { label: 'Save Rate', value: stats.total > 0 ? `${stats.save_rate}%` : '—', sub: `${stats.saved ?? 0} saved · ${stats.paused ?? 0} paused` },
           { label: 'Lost', value: stats.lost ?? '—', sub: 'no save outcome' },
-          { label: 'Revenue Lost/Mo', value: stats.revenue_lost_monthly > 0 ? fmt$(stats.revenue_lost_monthly) : '—', sub: 'from logged records' },
+          { label: 'Annual Value Lost', value: stats.annual_value_lost > 0 ? fmt$(stats.annual_value_lost) : stats.revenue_lost_monthly > 0 ? fmt$(stats.revenue_lost_monthly * 12) : '—', sub: stats.annual_value_lost > 0 ? 'from logged records' : 'est. from monthly ×12' },
         ].map(({ label, value, sub }) => (
           <div key={label} className="card text-center py-4">
             <p className="text-xs text-gray-400 uppercase tracking-wide mb-1">{label}</p>

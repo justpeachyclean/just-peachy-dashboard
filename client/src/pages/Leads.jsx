@@ -341,7 +341,8 @@ export default function Leads() {
             from={initialBooked.length}
             to={initialRecurring.length}
             rate={initialToRecurringRate}
-            goal={null}
+            goal={0.35}
+            stretch={0.45}
           />
         </div>
       </div>

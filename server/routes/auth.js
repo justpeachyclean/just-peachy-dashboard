@@ -21,6 +21,29 @@ router.post('/login', (req, res) => {
   res.json({ ok: true, token: makeToken(user), user: { id: user.id, username: user.username, display_name: user.display_name, role: user.role } })
 })
 
+// POST /api/auth/reset-user  — emergency password reset for any user, requires webhook secret
+// Body: { username: "amanda", new_password: "..." }  Header: x-webhook-secret: <secret>
+router.post('/reset-user', (req, res) => {
+  const secret = db.prepare("SELECT value FROM settings WHERE key='webhook_secret'").get()?.value
+  const provided = req.headers['x-webhook-secret']
+  if (!secret || !provided || provided !== secret) {
+    return res.status(403).json({ error: 'Forbidden — invalid webhook secret' })
+  }
+  const { username, new_password } = req.body || {}
+  if (!username) return res.status(400).json({ error: 'username required' })
+  if (!new_password || new_password.length < 4) return res.status(400).json({ error: 'new_password required (min 4 chars)' })
+
+  const existing = db.prepare('SELECT id FROM users WHERE username = ? COLLATE NOCASE').get(username)
+  if (existing) {
+    db.prepare('UPDATE users SET password_hash = ?, active = 1 WHERE username = ? COLLATE NOCASE')
+      .run(hashPassword(new_password), username)
+    console.log(`🔐 Password reset for user: ${username}`)
+    res.json({ ok: true, message: `Password updated for ${username}. Active set to true.` })
+  } else {
+    res.status(404).json({ error: `User "${username}" not found` })
+  }
+})
+
 // POST /api/auth/reset-admin  — emergency admin password reset, requires webhook secret
 // Body: { new_password: "..." }  Header: x-webhook-secret: <secret>
 router.post('/reset-admin', (req, res) => {

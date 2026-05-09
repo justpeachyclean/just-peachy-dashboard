@@ -66,12 +66,24 @@ function exportCsv(filename, rows) {
 }
 
 const VISITS = { weekly: 52, biweekly: 26, 'bi-weekly': 26, monthly: 13, 'every 4 weeks': 13, one_time: 1, 'one time': 1, 'one-time': 1, 'tri-weekly': 17 }
+// Recurring visits after the initial clean (total − 1)
+const RECURRING_VISITS = { weekly: 51, biweekly: 25, 'bi-weekly': 25, monthly: 12, 'every 4 weeks': 12, 'tri-weekly': 16 }
+const ONE_TIME_FREQS = ['one_time', 'one time', 'one-time']
 
-function calcAnnual(price, frequency) {
-  if (!price || !frequency) return null
-  const mult = VISITS[frequency.toLowerCase().trim()]
-  if (!mult) return null
-  return Math.round(parseFloat(price) * mult)
+// Two-tier annual value: initial clean price + recurring price × remaining visits
+function calcAnnual(initialPrice, recurringPrice, frequency) {
+  if (!frequency) return null
+  const f = frequency.toLowerCase().trim()
+  if (ONE_TIME_FREQS.includes(f)) return initialPrice ? Math.round(parseFloat(initialPrice)) : null
+  const remaining = RECURRING_VISITS[f]
+  const total = VISITS[f]
+  // Both prices: two-tier formula
+  if (initialPrice && recurringPrice && remaining != null) {
+    return Math.round(parseFloat(initialPrice) + parseFloat(recurringPrice) * remaining)
+  }
+  // Single price fallback: multiply by all visits
+  const price = recurringPrice || initialPrice
+  return (price && total) ? Math.round(parseFloat(price) * total) : null
 }
 
 // Funnel stage card
@@ -131,6 +143,7 @@ const BLANK_FORM = {
   rep_name: 'Lexi',
   client_name: '',
   frequency: '',
+  initial_clean_price: '',
   price_per_clean: '',
   converted: false,
   initial_clean_booked: false,
@@ -176,6 +189,7 @@ export default function Leads() {
       rep_name:             r.rep_name || '',
       client_name:          r.client_name || '',
       frequency:            r.frequency || '',
+      initial_clean_price:  r.initial_clean_price ?? '',
       price_per_clean:      r.price_per_clean ?? r.quote_amount ?? '',
       converted:            !!r.converted,
       initial_clean_booked: !!r.initial_clean_booked,
@@ -192,10 +206,12 @@ export default function Leads() {
     e.preventDefault()
     setSaving(true)
     const cleanPrice = form.price_per_clean ? parseFloat(form.price_per_clean) : null
+    const initPrice  = form.initial_clean_price ? parseFloat(form.initial_clean_price) : null
     const payload = {
       ...form,
-      quote_amount:         cleanPrice,
+      quote_amount:         cleanPrice ?? initPrice,
       price_per_clean:      cleanPrice,
+      initial_clean_price:  initPrice,
       converted:            form.converted            ? 1 : 0,
       initial_clean_booked: form.initial_clean_booked ? 1 : 0,
       recurring_retained:   form.recurring_retained   ? 1 : 0,
@@ -234,7 +250,7 @@ export default function Leads() {
 
   const converted      = leads.filter(r => r.converted)
   const recurring      = converted.filter(r => r.recurring_retained)
-  const quoted         = leads.filter(r => r.price_per_clean != null || r.quote_amount != null)
+  const quoted         = leads.filter(r => r.price_per_clean != null || r.quote_amount != null || r.initial_clean_price != null)
   const initialBooked  = leads.filter(r => r.initial_clean_booked)
   const initialRecurring = initialBooked.filter(r => r.recurring_retained)
 
@@ -441,34 +457,69 @@ export default function Leads() {
                 <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Client Name</label>
                 <input type="text" className="form-input" value={f(form.client_name)} onChange={set('client_name')} />
               </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Frequency / Service</label>
-                  <select className="form-input" value={f(form.frequency)} onChange={set('frequency')}>
-                    <option value="">— select —</option>
-                    {FREQUENCIES.map(f => <option key={f} value={f}>{FREQ_LABELS[f] || f}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Price Per Clean ($)</label>
-                  <input type="number" min="0" step="0.01" className="form-input" placeholder="e.g. 185" value={f(form.price_per_clean)} onChange={set('price_per_clean')} />
-                </div>
+              {/* Frequency */}
+              <div>
+                <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Frequency / Service</label>
+                <select className="form-input" value={f(form.frequency)} onChange={set('frequency')}>
+                  <option value="">— select —</option>
+                  {FREQUENCIES.map(f => <option key={f} value={f}>{FREQ_LABELS[f] || f}</option>)}
+                </select>
               </div>
-              {/* Live annual value preview */}
-              {form.price_per_clean && form.frequency && (() => {
-                const annual = calcAnnual(form.price_per_clean, form.frequency)
-                const freq = form.frequency.toLowerCase().trim()
-                const isOneTime = ['one_time','one time','one-time'].includes(freq)
-                const mult = VISITS[freq]
-                if (!annual) return null
+              {/* Pricing — two-tier for recurring, single for one-time */}
+              {(() => {
+                const freq = (form.frequency || '').toLowerCase().trim()
+                const isOneTime = ONE_TIME_FREQS.includes(freq)
+                const noFreq = !form.frequency
+                if (noFreq || isOneTime) {
+                  return (
+                    <div>
+                      <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">
+                        {isOneTime ? 'One-Time Price ($)' : 'Quote / Price ($)'}
+                      </label>
+                      <input type="number" min="0" step="0.01" className="form-input" placeholder="e.g. 300"
+                        value={f(form.initial_clean_price || form.price_per_clean)}
+                        onChange={e => setForm(p => ({ ...p, initial_clean_price: e.target.value, price_per_clean: '' }))} />
+                    </div>
+                  )
+                }
+                // Recurring frequency — show two price boxes
+                const remaining = RECURRING_VISITS[freq]
                 return (
-                  <div className="flex items-center gap-2 px-3 py-2 bg-brand/5 border border-brand/15 rounded-lg text-sm">
-                    <span className="text-brand font-bold text-base">{fmt$(annual)}</span>
-                    <span className="text-gray-500">
-                      {isOneTime
-                        ? 'one-time service'
-                        : `annual value · ${fmt$(parseFloat(form.price_per_clean))} × ${mult} visits/yr`}
-                    </span>
+                  <div className="space-y-2">
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Initial Clean Price ($)</label>
+                        <input type="number" min="0" step="0.01" className="form-input" placeholder="e.g. 350"
+                          value={f(form.initial_clean_price)} onChange={set('initial_clean_price')} />
+                        <p className="text-xs text-gray-400 mt-0.5">One-time deep clean rate</p>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Recurring Price ($)</label>
+                        <input type="number" min="0" step="0.01" className="form-input" placeholder="e.g. 185"
+                          value={f(form.price_per_clean)} onChange={set('price_per_clean')} />
+                        <p className="text-xs text-gray-400 mt-0.5">Per clean going forward</p>
+                      </div>
+                    </div>
+                    {/* Live annual value preview */}
+                    {(form.initial_clean_price || form.price_per_clean) && (() => {
+                      const annual = calcAnnual(form.initial_clean_price, form.price_per_clean, form.frequency)
+                      if (!annual) return null
+                      const initAmt = form.initial_clean_price ? parseFloat(form.initial_clean_price) : null
+                      const recAmt  = form.price_per_clean    ? parseFloat(form.price_per_clean)    : null
+                      return (
+                        <div className="px-3 py-2 bg-brand/5 border border-brand/15 rounded-lg text-sm">
+                          <div className="flex items-baseline gap-2">
+                            <span className="text-brand font-bold text-base">{fmt$(annual)}</span>
+                            <span className="text-gray-500">estimated annual value</span>
+                          </div>
+                          {initAmt && recAmt && remaining != null && (
+                            <p className="text-xs text-gray-400 mt-0.5">
+                              {fmt$(initAmt)} initial + {fmt$(recAmt)} × {remaining} visits
+                            </p>
+                          )}
+                        </div>
+                      )
+                    })()}
                   </div>
                 )
               })()}

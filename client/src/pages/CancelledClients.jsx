@@ -70,10 +70,11 @@ function BarRow({ label, value, max, color, extra }) {
   )
 }
 
-function CancelRow({ row: r, onSaved }) {
+function CancelRow({ row: r, onSaved, onDeleted }) {
   const [open, setOpen] = useState(false)
   const [ed, setEd] = useState({})
   const [saving, setSaving] = useState(false)
+  const [deleting, setDeleting] = useState(false)
   const [editPrice, setEditPrice] = useState('')
   const [editFreq, setEditFreq] = useState('')
 
@@ -242,11 +243,26 @@ function CancelRow({ row: r, onSaved }) {
               <label htmlFor={`sa-${r.id}`} className="text-sm text-gray-700 cursor-pointer">Save attempt was made</label>
             </div>
           </div>
-          <div className="flex justify-end gap-2 mt-3">
-            <button onClick={() => { setOpen(false); setEd({}) }} className="text-sm text-gray-500 hover:text-gray-700">Cancel</button>
-            <button onClick={handleSave} disabled={saving} className="btn-primary text-sm">
-              {saving ? 'Saving…' : 'Save'}
+          <div className="flex items-center justify-between mt-3">
+            <button
+              onClick={async () => {
+                if (!confirm(`Delete "${r.client_name}"? This cannot be undone.`)) return
+                setDeleting(true)
+                await apiFetch(`/api/cancellations/${r.id}`, { method: 'DELETE' })
+                setDeleting(false)
+                onDeleted()
+              }}
+              disabled={deleting}
+              className="text-xs text-gray-300 hover:text-danger transition-colors"
+            >
+              {deleting ? 'Deleting…' : '✕ Delete record'}
             </button>
+            <div className="flex gap-2">
+              <button onClick={() => { setOpen(false); setEd({}) }} className="text-sm text-gray-500 hover:text-gray-700">Cancel</button>
+              <button onClick={handleSave} disabled={saving} className="btn-primary text-sm">
+                {saving ? 'Saving…' : 'Save'}
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -543,7 +559,7 @@ export default function CancelledClients() {
               <span>Date</span><span>Client</span><span>Code</span><span className="hidden sm:block">Outcome</span><span className="hidden md:block text-right">Rev/Mo</span><span />
             </div>
             {rows.map(r => (
-              <CancelRow key={r.id} row={r} onSaved={load} />
+              <CancelRow key={r.id} row={r} onSaved={load} onDeleted={load} />
             ))}
           </div>
         )}

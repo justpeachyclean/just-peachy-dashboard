@@ -183,6 +183,16 @@ router.patch('/:id', (req, res) => {
   res.json({ ok: true })
 })
 
+// DELETE /api/cancellations/:id
+router.delete('/:id', (req, res) => {
+  const row = db.prepare('SELECT client_name, cancel_date FROM cancelled_clients WHERE id = ?').get(req.params.id)
+  if (!row) return res.status(404).json({ error: 'Not found' })
+  db.prepare('DELETE FROM client_nurture WHERE cancelled_id = ?').run(req.params.id)
+  db.prepare('DELETE FROM cancelled_clients WHERE id = ?').run(req.params.id)
+  audit(req, 'cancellation_deleted', `${row.client_name || 'Unknown'} — ${row.cancel_date}`)
+  res.json({ ok: true })
+})
+
 // GET /api/cancellations/codes  — return all valid codes for UI dropdowns
 router.get('/codes', (req, res) => {
   res.json(CODES)

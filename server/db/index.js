@@ -47,7 +47,9 @@ const migrations = [
   `ALTER TABLE lead_records ADD COLUMN reason TEXT`,
   `ALTER TABLE cancelled_clients ADD COLUMN price_per_visit REAL`,
   `ALTER TABLE cancelled_clients ADD COLUMN annual_value_lost REAL`,
+  `ALTER TABLE lead_records ADD COLUMN initial_clean_booked INTEGER DEFAULT 0`,
   `INSERT OR IGNORE INTO settings (key, value) VALUES ('dashboard_password', '')`,
+  `INSERT OR IGNORE INTO settings (key, value) VALUES ('recurring_clients_current', NULL)`,
   `CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     username TEXT NOT NULL UNIQUE COLLATE NOCASE,

@@ -27,6 +27,7 @@ const FREQ_COLORS = {
 const FREQUENCIES = ['weekly', 'biweekly', 'monthly', 'tri-weekly', 'every 4 weeks', 'one_time']
 const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 const fmt$ = n => n != null ? `$${Number(n).toLocaleString(undefined, { maximumFractionDigits: 0 })}` : '—'
+const pct = n => n != null ? `${(n * 100).toFixed(1)}%` : '—'
 
 function FreqBadge({ freq }) {
   if (!freq) return <span className="text-gray-300 text-xs">—</span>
@@ -39,7 +40,7 @@ function FreqBadge({ freq }) {
 }
 
 function exportCsv(filename, rows) {
-  const headers = ['Date', 'Rep', 'Client Name', 'Frequency', 'Quote', 'Annual Value', 'Converted', 'Recurring', 'Lead Source', 'Reason']
+  const headers = ['Date', 'Rep', 'Client Name', 'Frequency', 'Quote', 'Annual Value', 'Converted', 'Initial Clean', 'Recurring', 'Lead Source', 'Reason']
   const escape = v => `"${String(v ?? '').replace(/"/g, '""')}"`
   const lines = [
     headers.join(','),
@@ -51,6 +52,7 @@ function exportCsv(filename, rows) {
       r.quote_amount != null ? r.quote_amount : '',
       r.annual_value != null ? r.annual_value : '',
       r.converted ? 'Y' : 'N',
+      r.initial_clean_booked ? 'Y' : 'N',
       r.recurring_retained ? 'Y' : 'N',
       escape(r.lead_source),
       escape(r.reason),
@@ -72,6 +74,58 @@ function calcAnnual(price, frequency) {
   return Math.round(parseFloat(price) * mult)
 }
 
+// Funnel stage card
+function FunnelStage({ label, from, to, rate, goal, stretch, showArrow = true }) {
+  let color = 'text-gray-400'
+  let barColor = 'bg-gray-200'
+  let badge = null
+
+  if (rate != null && goal != null) {
+    const pctOfGoal = rate / goal
+    if (stretch && rate >= stretch) {
+      color = 'text-brand'; barColor = 'bg-brand'; badge = '🎯 Stretch'
+    } else if (rate >= goal) {
+      color = 'text-ok'; barColor = 'bg-ok'; badge = '✓ Goal'
+    } else if (pctOfGoal >= 0.75) {
+      color = 'text-amber-500'; barColor = 'bg-amber-400'; badge = 'Near goal'
+    } else {
+      color = 'text-danger'; barColor = 'bg-danger'
+    }
+  } else if (rate != null) {
+    color = 'text-brand'; barColor = 'bg-brand'
+  }
+
+  const barWidth = rate != null && goal != null
+    ? Math.min(100, (rate / (stretch || goal)) * 100)
+    : rate != null ? Math.min(100, rate * 100) : 0
+
+  return (
+    <div className="flex-1 min-w-0">
+      <div className="kpi-card h-full border-gray-200">
+        <p className="text-xs font-medium text-gray-400 uppercase tracking-wide mb-1">{label}</p>
+        <div className="flex items-baseline gap-1.5 mb-1">
+          <span className={`text-2xl font-bold ${color}`}>{rate != null ? pct(rate) : '—'}</span>
+          {from != null && to != null && (
+            <span className="text-xs text-gray-400">{to}/{from}</span>
+          )}
+        </div>
+        {/* Progress bar */}
+        <div className="h-1.5 bg-gray-100 rounded-full mb-2 overflow-hidden">
+          <div className={`h-full rounded-full transition-all ${barColor}`} style={{ width: `${barWidth}%` }} />
+        </div>
+        {/* Goals */}
+        <div className="flex items-center justify-between text-xs text-gray-400">
+          <span>
+            {goal != null && <>Goal: <span className="font-semibold text-gray-600">{pct(goal)}</span></>}
+            {stretch != null && <> · Stretch: <span className="font-semibold text-brand">{pct(stretch)}</span></>}
+          </span>
+          {badge && <span className="font-semibold text-xs">{badge}</span>}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 const BLANK_FORM = {
   record_date: new Date().toISOString().slice(0, 10),
   rep_name: 'Lexi',
@@ -79,6 +133,7 @@ const BLANK_FORM = {
   frequency: '',
   price_per_clean: '',
   converted: false,
+  initial_clean_booked: false,
   recurring_retained: false,
   lead_source: '',
   used_before: '',
@@ -117,17 +172,18 @@ export default function Leads() {
   const openEdit = r => {
     setEditId(r.id)
     setForm({
-      record_date:        r.record_date || new Date().toISOString().slice(0, 10),
-      rep_name:           r.rep_name || '',
-      client_name:        r.client_name || '',
-      frequency:          r.frequency || '',
-      price_per_clean:    r.price_per_clean ?? r.quote_amount ?? '',
-      converted:          !!r.converted,
-      recurring_retained: !!r.recurring_retained,
-      lead_source:        r.lead_source || '',
-      used_before:        r.used_before || '',
-      reason:             r.reason || '',
-      notes:              r.notes || '',
+      record_date:          r.record_date || new Date().toISOString().slice(0, 10),
+      rep_name:             r.rep_name || '',
+      client_name:          r.client_name || '',
+      frequency:            r.frequency || '',
+      price_per_clean:      r.price_per_clean ?? r.quote_amount ?? '',
+      converted:            !!r.converted,
+      initial_clean_booked: !!r.initial_clean_booked,
+      recurring_retained:   !!r.recurring_retained,
+      lead_source:          r.lead_source || '',
+      used_before:          r.used_before || '',
+      reason:               r.reason || '',
+      notes:                r.notes || '',
     })
     setShowForm(true)
   }
@@ -138,10 +194,11 @@ export default function Leads() {
     const cleanPrice = form.price_per_clean ? parseFloat(form.price_per_clean) : null
     const payload = {
       ...form,
-      quote_amount:    cleanPrice,
-      price_per_clean: cleanPrice,
-      converted:          form.converted          ? 1 : 0,
-      recurring_retained: form.recurring_retained ? 1 : 0,
+      quote_amount:         cleanPrice,
+      price_per_clean:      cleanPrice,
+      converted:            form.converted            ? 1 : 0,
+      initial_clean_booked: form.initial_clean_booked ? 1 : 0,
+      recurring_retained:   form.recurring_retained   ? 1 : 0,
       source: 'manual',
     }
     if (editId) {
@@ -175,10 +232,18 @@ export default function Leads() {
     return true
   })
 
-  const converted = leads.filter(r => r.converted)
-  const recurring = converted.filter(r => r.recurring_retained)
-  const totalAnnual = recurring.reduce((s, r) => s + (r.annual_value || 0), 0)
-  const closeRate = leads.length > 0 ? converted.length / leads.length : null
+  const converted      = leads.filter(r => r.converted)
+  const recurring      = converted.filter(r => r.recurring_retained)
+  const quoted         = leads.filter(r => r.price_per_clean != null || r.quote_amount != null)
+  const initialBooked  = leads.filter(r => r.initial_clean_booked)
+  const initialRecurring = initialBooked.filter(r => r.recurring_retained)
+
+  const totalAnnual    = recurring.reduce((s, r) => s + (r.annual_value || 0), 0)
+
+  // Funnel rates
+  const leadToQuoteRate     = leads.length > 0   ? quoted.length / leads.length           : null
+  const quoteToSaleRate     = quoted.length > 0  ? converted.length / quoted.length       : null
+  const initialToRecurringRate = initialBooked.length > 0 ? initialRecurring.length / initialBooked.length : null
 
   const monthLabel = filter.month
     ? `${MONTH_NAMES[parseInt(filter.month) - 1]} ${filter.year}`
@@ -209,9 +274,8 @@ export default function Leads() {
         </div>
       </div>
 
-
-      {/* Summary row */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-5">
+      {/* KPI Summary row */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4">
         <div className="kpi-card border-gray-200">
           <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Leads In</p>
           <p className="text-3xl font-bold text-ink mt-2">{leads.length}</p>
@@ -219,18 +283,50 @@ export default function Leads() {
         <div className="kpi-card border-ok">
           <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Converted</p>
           <p className="text-3xl font-bold text-ok mt-2">{converted.length}</p>
-          <p className="text-xs text-gray-400 mt-1">
-            {closeRate != null ? `${(closeRate * 100).toFixed(1)}% close rate` : ''}
-          </p>
+          <p className="text-xs text-gray-400 mt-1">{quoted.length > 0 ? `${pct(quoteToSaleRate)} of quoted` : ''}</p>
         </div>
         <div className="kpi-card border-brand">
           <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Recurring Retained</p>
           <p className="text-3xl font-bold text-brand mt-2">{recurring.length}</p>
+          {initialBooked.length > 0 && (
+            <p className="text-xs text-gray-400 mt-1">{initialRecurring.length}/{initialBooked.length} initial→recurring</p>
+          )}
         </div>
         <div className="kpi-card border-peach">
           <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Est. Annual Value</p>
           <p className="text-3xl font-bold text-ink mt-2">{totalAnnual > 0 ? fmt$(totalAnnual) : '—'}</p>
           <p className="text-xs text-gray-400 mt-1">recurring only</p>
+        </div>
+      </div>
+
+      {/* Conversion Funnel */}
+      <div className="mb-5">
+        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Conversion Funnel</p>
+        <div className="flex gap-3 items-stretch">
+          <FunnelStage
+            label="Lead → Quote"
+            from={leads.length}
+            to={quoted.length}
+            rate={leadToQuoteRate}
+            goal={0.90}
+          />
+          <div className="flex items-center text-gray-300 text-lg font-light self-center">›</div>
+          <FunnelStage
+            label="Quote → Sale"
+            from={quoted.length}
+            to={converted.length}
+            rate={quoteToSaleRate}
+            goal={0.40}
+            stretch={0.50}
+          />
+          <div className="flex items-center text-gray-300 text-lg font-light self-center">›</div>
+          <FunnelStage
+            label="Initial → Recurring"
+            from={initialBooked.length}
+            to={initialRecurring.length}
+            rate={initialToRecurringRate}
+            goal={null}
+          />
         </div>
       </div>
 
@@ -263,7 +359,7 @@ export default function Leads() {
 
       {/* Table */}
       <div className="card overflow-x-auto">
-        <table className="w-full text-sm min-w-[800px]">
+        <table className="w-full text-sm min-w-[900px]">
           <thead>
             <tr className="text-xs text-gray-400 uppercase border-b border-gray-100">
               <th className="text-left py-2 pr-2 font-medium">Date</th>
@@ -273,7 +369,8 @@ export default function Leads() {
               <th className="text-right py-2 px-2 font-medium">Quote</th>
               <th className="text-right py-2 px-2 font-medium">Annual Val.</th>
               <th className="text-center py-2 px-2 font-medium">Conv?</th>
-              <th className="text-center py-2 px-2 font-medium">Recurring?</th>
+              <th className="text-center py-2 px-2 font-medium" title="Initial clean booked">Init?</th>
+              <th className="text-center py-2 px-2 font-medium">Recur?</th>
               <th className="text-left py-2 px-2 font-medium">Source</th>
               <th className="py-2 pl-2"></th>
             </tr>
@@ -281,7 +378,7 @@ export default function Leads() {
           <tbody>
             {visible.length === 0 ? (
               <tr>
-                <td colSpan={10} className="text-center py-12 text-gray-400 text-sm">
+                <td colSpan={11} className="text-center py-12 text-gray-400 text-sm">
                   No leads for {monthLabel}.{' '}
                   <button onClick={() => { setEditId(null); setForm(BLANK_FORM); setShowForm(true) }} className="text-brand underline">Add one →</button>
                 </td>
@@ -302,6 +399,11 @@ export default function Leads() {
                     : <span className="text-xs text-gray-300">N</span>}
                 </td>
                 <td className="py-2 px-2 text-center">
+                  {r.initial_clean_booked
+                    ? <span className="text-xs font-bold text-amber-500">Y</span>
+                    : <span className="text-xs text-gray-300">—</span>}
+                </td>
+                <td className="py-2 px-2 text-center">
                   {r.recurring_retained
                     ? <span className="text-xs font-bold text-brand">Y</span>
                     : <span className="text-xs text-gray-300">N</span>}
@@ -316,7 +418,7 @@ export default function Leads() {
         </table>
       </div>
 
-      {/* Add lead modal */}
+      {/* Add/Edit lead modal */}
       {showForm && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4 overflow-y-auto">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md my-4">
@@ -384,16 +486,30 @@ export default function Leads() {
                   </select>
                 </div>
               </div>
-              <div className="flex gap-6 pt-1">
+              {/* Conversion checkboxes */}
+              <div className="flex flex-wrap gap-x-6 gap-y-2 pt-1">
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input type="checkbox" checked={!!form.converted} onChange={set('converted')} className="w-4 h-4 accent-ok" />
                   <span className="text-sm text-gray-700">Converted</span>
                 </label>
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input type="checkbox" checked={!!form.recurring_retained} onChange={set('recurring_retained')} className="w-4 h-4 accent-brand" />
-                  <span className="text-sm text-gray-700">Recurring Retained</span>
-                </label>
+                {form.converted && (
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" checked={!!form.initial_clean_booked} onChange={set('initial_clean_booked')} className="w-4 h-4 accent-amber-500" />
+                    <span className="text-sm text-gray-700">Initial Clean Booked</span>
+                  </label>
+                )}
+                {form.converted && (
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" checked={!!form.recurring_retained} onChange={set('recurring_retained')} className="w-4 h-4 accent-brand" />
+                    <span className="text-sm text-gray-700">Recurring Retained</span>
+                  </label>
+                )}
               </div>
+              {form.converted && form.initial_clean_booked && !form.recurring_retained && (
+                <p className="text-xs text-amber-600 bg-amber-50 px-3 py-1.5 rounded-lg">
+                  Initial clean booked — check "Recurring Retained" once they schedule ongoing service.
+                </p>
+              )}
               {!form.converted && (
                 <div>
                   <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Reason Not Converted</label>

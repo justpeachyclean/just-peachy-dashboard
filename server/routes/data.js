@@ -43,14 +43,18 @@ router.get('/summary', (req, res) => {
       COUNT(*) AS leads_in,
       COUNT(CASE WHEN price_per_clean IS NOT NULL OR quote_amount IS NOT NULL THEN 1 END) AS leads_quoted,
       COUNT(CASE WHEN converted=1 THEN 1 END) AS leads_closed,
-      COUNT(CASE WHEN converted=1 AND frequency NOT IN ('one_time','one-time','one time','') THEN 1 END) AS recurring_closed
+      COUNT(CASE WHEN converted=1 AND frequency NOT IN ('one_type','one-time','one time','') THEN 1 END) AS recurring_closed,
+      COUNT(CASE WHEN initial_clean_booked=1 THEN 1 END) AS initial_cleans_booked,
+      COUNT(CASE WHEN initial_clean_booked=1 AND recurring_retained=1 THEN 1 END) AS initial_to_recurring
     FROM lead_records WHERE month = ?
   `).get(month)
 
-  const leadsIn       = leadCounts.leads_in > 0 ? leadCounts.leads_in       : (ms?.leads_in     ?? 0)
-  const leadsQuoted   = leadCounts.leads_in > 0 ? leadCounts.leads_quoted   : (ms?.leads_quoted ?? 0)
-  const leadsClosed   = leadCounts.leads_in > 0 ? leadCounts.leads_closed   : (ms?.leads_closed ?? 0)
-  const recurringClosed = leadCounts.leads_in > 0 ? leadCounts.recurring_closed : (ms?.recurring_closed ?? 0)
+  const leadsIn             = leadCounts.leads_in > 0 ? leadCounts.leads_in       : (ms?.leads_in     ?? 0)
+  const leadsQuoted         = leadCounts.leads_in > 0 ? leadCounts.leads_quoted   : (ms?.leads_quoted ?? 0)
+  const leadsClosed         = leadCounts.leads_in > 0 ? leadCounts.leads_closed   : (ms?.leads_closed ?? 0)
+  const recurringClosed     = leadCounts.leads_in > 0 ? leadCounts.recurring_closed : (ms?.recurring_closed ?? 0)
+  const initialCleansBooked = leadCounts.initial_cleans_booked ?? 0
+  const initialToRecurring  = leadCounts.initial_to_recurring  ?? 0
 
   // Marketing spend: QB > monthly_sales > manual entries
   const qbMarketing = db.prepare(`
@@ -93,6 +97,11 @@ router.get('/summary', (req, res) => {
     leads_quoted: leadsQuoted,
     leads_closed: leadsClosed,
     recurring_closed: recurringClosed,
+    lead_to_quote_rate: leadsIn > 0 ? leadsQuoted / leadsIn : null,
+    quote_to_sale_rate: leadsQuoted > 0 ? leadsClosed / leadsQuoted : null,
+    initial_cleans_booked: initialCleansBooked,
+    initial_to_recurring: initialToRecurring,
+    initial_to_recurring_rate: initialCleansBooked > 0 ? initialToRecurring / initialCleansBooked : null,
     initial_cleans: ms?.initial_cleans ?? 0,
     retained: ms?.retained ?? 0,
     skips: ms?.skips ?? 0,
@@ -158,14 +167,18 @@ router.get('/monthly', (req, res) => {
         COUNT(*) AS leads_in,
         COUNT(CASE WHEN price_per_clean IS NOT NULL OR quote_amount IS NOT NULL THEN 1 END) AS leads_quoted,
         COUNT(CASE WHEN converted=1 THEN 1 END) AS leads_closed,
-        COUNT(CASE WHEN converted=1 AND frequency NOT IN ('one_time','one-time','one time','') THEN 1 END) AS recurring_closed
+        COUNT(CASE WHEN converted=1 AND frequency NOT IN ('one_type','one-time','one time','') THEN 1 END) AS recurring_closed,
+        COUNT(CASE WHEN initial_clean_booked=1 THEN 1 END) AS initial_cleans_booked,
+        COUNT(CASE WHEN initial_clean_booked=1 AND recurring_retained=1 THEN 1 END) AS initial_to_recurring
       FROM lead_records WHERE month = ?
     `).get(month)
 
-    const mLeadsIn       = mlc.leads_in > 0 ? mlc.leads_in       : (ms?.leads_in     ?? 0)
-    const mLeadsQuoted   = mlc.leads_in > 0 ? mlc.leads_quoted   : (ms?.leads_quoted ?? 0)
-    const mLeadsClosed   = mlc.leads_in > 0 ? mlc.leads_closed   : (ms?.leads_closed ?? 0)
-    const mRecurringClosed = mlc.leads_in > 0 ? mlc.recurring_closed : (ms?.recurring_closed ?? 0)
+    const mLeadsIn             = mlc.leads_in > 0 ? mlc.leads_in       : (ms?.leads_in     ?? 0)
+    const mLeadsQuoted         = mlc.leads_in > 0 ? mlc.leads_quoted   : (ms?.leads_quoted ?? 0)
+    const mLeadsClosed         = mlc.leads_in > 0 ? mlc.leads_closed   : (ms?.leads_closed ?? 0)
+    const mRecurringClosed     = mlc.leads_in > 0 ? mlc.recurring_closed : (ms?.recurring_closed ?? 0)
+    const mInitialCleansBooked = mlc.initial_cleans_booked ?? 0
+    const mInitialToRecurring  = mlc.initial_to_recurring  ?? 0
 
     const closeRate = mLeadsQuoted > 0
       ? mLeadsClosed / mLeadsQuoted
@@ -186,6 +199,11 @@ router.get('/monthly', (req, res) => {
       leads_quoted: mLeadsQuoted,
       leads_closed: mLeadsClosed,
       recurring_closed: mRecurringClosed,
+      lead_to_quote_rate: mLeadsIn > 0 ? mLeadsQuoted / mLeadsIn : null,
+      quote_to_sale_rate: mLeadsQuoted > 0 ? mLeadsClosed / mLeadsQuoted : null,
+      initial_cleans_booked: mInitialCleansBooked,
+      initial_to_recurring: mInitialToRecurring,
+      initial_to_recurring_rate: mInitialCleansBooked > 0 ? mInitialToRecurring / mInitialCleansBooked : null,
       initial_cleans: ms?.initial_cleans ?? 0,
       move_out_cleans: ms?.move_out_cleans ?? 0,
       retained: ms?.retained ?? 0,

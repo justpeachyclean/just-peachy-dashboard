@@ -60,6 +60,7 @@ router.post('/', (req, res) => {
     quote_amount,
     converted = 0,
     recurring_retained = 0,
+    initial_clean_booked = 0,
     lead_source,
     used_before,
     reason,
@@ -76,28 +77,29 @@ router.post('/', (req, res) => {
   db.prepare(`
     INSERT INTO lead_records
       (record_date, client_name, frequency, price_per_clean, quote_amount,
-       converted, recurring_retained, lead_source, used_before, reason,
+       converted, recurring_retained, initial_clean_booked, lead_source, used_before, reason,
        rep_name, month, source, external_id, notes)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     ON CONFLICT(external_id) DO UPDATE SET
-      record_date        = excluded.record_date,
-      client_name        = excluded.client_name,
-      frequency          = excluded.frequency,
-      price_per_clean    = excluded.price_per_clean,
-      quote_amount       = excluded.quote_amount,
-      converted          = excluded.converted,
-      recurring_retained = excluded.recurring_retained,
-      lead_source        = excluded.lead_source,
-      used_before        = excluded.used_before,
-      reason             = excluded.reason,
-      rep_name           = excluded.rep_name,
-      month              = excluded.month,
-      source             = excluded.source,
-      notes              = excluded.notes
+      record_date           = excluded.record_date,
+      client_name           = excluded.client_name,
+      frequency             = excluded.frequency,
+      price_per_clean       = excluded.price_per_clean,
+      quote_amount          = excluded.quote_amount,
+      converted             = excluded.converted,
+      recurring_retained    = excluded.recurring_retained,
+      initial_clean_booked  = excluded.initial_clean_booked,
+      lead_source           = excluded.lead_source,
+      used_before           = excluded.used_before,
+      reason                = excluded.reason,
+      rep_name              = excluded.rep_name,
+      month                 = excluded.month,
+      source                = excluded.source,
+      notes                 = excluded.notes
   `).run(
     record_date, client_name ?? null, frequency ?? null,
     price_per_clean ?? null, quote_amount ?? null,
-    converted ? 1 : 0, recurring_retained ? 1 : 0,
+    converted ? 1 : 0, recurring_retained ? 1 : 0, initial_clean_booked ? 1 : 0,
     lead_source ?? null, used_before ?? null, reason ?? null,
     rep_name ?? null, month, source, external_id ?? null, notes ?? null
   )
@@ -117,36 +119,37 @@ router.patch('/:id', (req, res) => {
 
   const {
     record_date, client_name, frequency, price_per_clean, quote_amount,
-    converted, recurring_retained, lead_source, used_before, reason,
+    converted, recurring_retained, initial_clean_booked, lead_source, used_before, reason,
     rep_name, notes,
   } = req.body
 
   const updated = {
-    record_date:        record_date        ?? existing.record_date,
-    client_name:        client_name        !== undefined ? client_name        : existing.client_name,
-    frequency:          frequency          !== undefined ? frequency          : existing.frequency,
-    price_per_clean:    price_per_clean    !== undefined ? price_per_clean    : existing.price_per_clean,
-    quote_amount:       quote_amount       !== undefined ? quote_amount       : existing.quote_amount,
-    converted:          converted          !== undefined ? (converted ? 1 : 0) : existing.converted,
-    recurring_retained: recurring_retained !== undefined ? (recurring_retained ? 1 : 0) : existing.recurring_retained,
-    lead_source:        lead_source        !== undefined ? lead_source        : existing.lead_source,
-    used_before:        used_before        !== undefined ? used_before        : existing.used_before,
-    reason:             reason             !== undefined ? reason             : existing.reason,
-    rep_name:           rep_name           !== undefined ? rep_name           : existing.rep_name,
-    notes:              notes              !== undefined ? notes              : existing.notes,
-    month:              (record_date ?? existing.record_date).slice(0, 7),
+    record_date:           record_date           ?? existing.record_date,
+    client_name:           client_name           !== undefined ? client_name           : existing.client_name,
+    frequency:             frequency             !== undefined ? frequency             : existing.frequency,
+    price_per_clean:       price_per_clean       !== undefined ? price_per_clean       : existing.price_per_clean,
+    quote_amount:          quote_amount          !== undefined ? quote_amount          : existing.quote_amount,
+    converted:             converted             !== undefined ? (converted ? 1 : 0)             : existing.converted,
+    recurring_retained:    recurring_retained    !== undefined ? (recurring_retained ? 1 : 0)    : existing.recurring_retained,
+    initial_clean_booked:  initial_clean_booked  !== undefined ? (initial_clean_booked ? 1 : 0)  : existing.initial_clean_booked,
+    lead_source:           lead_source           !== undefined ? lead_source           : existing.lead_source,
+    used_before:           used_before           !== undefined ? used_before           : existing.used_before,
+    reason:                reason                !== undefined ? reason                : existing.reason,
+    rep_name:              rep_name              !== undefined ? rep_name              : existing.rep_name,
+    notes:                 notes                 !== undefined ? notes                 : existing.notes,
+    month:                 (record_date ?? existing.record_date).slice(0, 7),
   }
 
   db.prepare(`
     UPDATE lead_records SET
       record_date=?, client_name=?, frequency=?, price_per_clean=?, quote_amount=?,
-      converted=?, recurring_retained=?, lead_source=?, used_before=?, reason=?,
+      converted=?, recurring_retained=?, initial_clean_booked=?, lead_source=?, used_before=?, reason=?,
       rep_name=?, notes=?, month=?
     WHERE id=?
   `).run(
     updated.record_date, updated.client_name, updated.frequency,
     updated.price_per_clean, updated.quote_amount,
-    updated.converted, updated.recurring_retained,
+    updated.converted, updated.recurring_retained, updated.initial_clean_booked,
     updated.lead_source, updated.used_before, updated.reason,
     updated.rep_name, updated.notes, updated.month,
     existing.id

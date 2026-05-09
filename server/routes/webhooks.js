@@ -169,9 +169,12 @@ router.post('/maidcentral', (req, res) => {
   }
 
   if (event_type === 'recurring_client_snapshot' && client_count != null) {
+    const snapCount = parseInt(client_count)
     db.prepare(`
       UPDATE monthly_sales SET recurring_clients = ? WHERE month = ?
-    `).run(parseInt(client_count), month)
+    `).run(snapCount, month)
+    // Keep the global "current" count in sync
+    db.prepare(`UPDATE settings SET value=? WHERE key='recurring_clients_current'`).run(String(snapCount))
   }
 
   if (event_type === 'daily_revenue_summary') {
@@ -217,6 +220,13 @@ router.post('/cancellation', (req, res) => {
     revenue_lost_monthly ? parseFloat(revenue_lost_monthly) : null,
     JSON.stringify(payload)
   )
+
+  // Auto-increment cancellations count in monthly_sales for this month
+  const cancelMonth = date.slice(0, 7)
+  db.prepare(`
+    INSERT INTO monthly_sales (month, cancellations) VALUES (?, 1)
+    ON CONFLICT(month) DO UPDATE SET cancellations = COALESCE(cancellations, 0) + 1, updated_at = datetime('now')
+  `).run(cancelMonth)
 
   // Auto-queue T-coded clients for nurture
   if (reason_code && reason_code.toUpperCase().startsWith('T')) {

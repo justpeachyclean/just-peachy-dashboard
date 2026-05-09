@@ -33,6 +33,7 @@ router.post('/reset-user', (req, res) => {
   if (!username) return res.status(400).json({ error: 'username required' })
   if (!new_password || new_password.length < 4) return res.status(400).json({ error: 'new_password required (min 4 chars)' })
 
+  const { role = 'member' } = req.body || {}
   const existing = db.prepare('SELECT id FROM users WHERE username = ? COLLATE NOCASE').get(username)
   if (existing) {
     db.prepare('UPDATE users SET password_hash = ?, active = 1 WHERE username = ? COLLATE NOCASE')
@@ -40,7 +41,11 @@ router.post('/reset-user', (req, res) => {
     console.log(`🔐 Password reset for user: ${username}`)
     res.json({ ok: true, message: `Password updated for ${username}. Active set to true.` })
   } else {
-    res.status(404).json({ error: `User "${username}" not found` })
+    // Create the user if they don't exist
+    db.prepare('INSERT INTO users (username, display_name, role, password_hash) VALUES (?,?,?,?)')
+      .run(username, username, role, hashPassword(new_password))
+    console.log(`🔐 Created user: ${username} (${role})`)
+    res.json({ ok: true, message: `User "${username}" created with role "${role}".` })
   }
 })
 

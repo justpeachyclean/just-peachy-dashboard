@@ -16,7 +16,7 @@ function StarRating({ value, max = 5 }) {
 }
 
 const BLANK = {
-  client_name: '', feedback_date: new Date().toISOString().split('T')[0],
+  client_name: '', feedback_date: new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York' }).format(new Date()),
   rating: '5', feedback_type: 'survey', comment: '', tech_name: '',
 }
 

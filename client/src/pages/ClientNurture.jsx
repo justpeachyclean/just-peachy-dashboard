@@ -1,16 +1,27 @@
 import { apiFetch } from '../AuthContext'
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
+import { todayEastern, daysUntilEastern, daysSinceEastern } from '../utils/dates'
 
 // ── Care types ──────────────────────────────────────────────────────────────
 const CARE_TYPES = {
   first_recurring:   { label: '1st Recurring Call',  icon: '📞', color: 'bg-blue-50 text-blue-700 border-blue-100' },
   fourth_recurring:  { label: '4th Recurring Call',  icon: '📞', color: 'bg-indigo-50 text-indigo-700 border-indigo-100' },
+  sixth_recurring:   { label: '6th Recurring Call',  icon: '📞', color: 'bg-violet-50 text-violet-700 border-violet-100' },
   six_month:         { label: '6-Month Milestone',   icon: '📅', color: 'bg-purple-50 text-purple-700 border-purple-100' },
-  one_year:          { label: '1-Year Milestone',    icon: '🎂', color: 'bg-pink-50 text-pink-700 border-pink-100' },
+  one_year:          { label: '1-Year Anniversary',  icon: '🎂', color: 'bg-pink-50 text-pink-700 border-pink-100' },
   scorecard_followup:{ label: 'Scorecard Follow-up', icon: '⭐', color: 'bg-yellow-50 text-yellow-700 border-yellow-100' },
   gift:              { label: 'Appreciation Gift',   icon: '🎁', color: 'bg-green-50 text-green-700 border-green-100' },
 }
+
+// Pipeline stages in order
+const JOURNEY_STAGES = [
+  { key: 'first_recurring',  short: '1st Call' },
+  { key: 'fourth_recurring', short: '4th Call' },
+  { key: 'sixth_recurring',  short: '6th Call' },
+  { key: 'six_month',        short: '6 Months' },
+  { key: 'one_year',         short: '1 Year' },
+]
 
 const GIFT_TYPES = {
   thank_you_card: { label: 'Thank You Card', icon: '💌' },
@@ -32,14 +43,8 @@ const WB_STATUS_LABELS = {
   won_back: 'Won Back', lost: 'Lost',
 }
 
-function daysUntil(d) {
-  if (!d) return null
-  return Math.ceil((new Date(d) - Date.now()) / 864e5)
-}
-function daysSince(d) {
-  if (!d) return null
-  return Math.floor((Date.now() - new Date(d)) / 864e5)
-}
+const daysUntil = daysUntilEastern
+const daysSince = daysSinceEastern
 
 function CareTypeBadge({ type }) {
   const t = CARE_TYPES[type] || { label: type, icon: '•', color: 'bg-gray-100 text-gray-500' }
@@ -52,12 +57,12 @@ function CareTypeBadge({ type }) {
 
 const BLANK_CARE = {
   client_name: '', care_type: 'first_recurring', gift_type: '',
-  gift_notes: '', scheduled_date: new Date().toISOString().split('T')[0],
+  gift_notes: '', scheduled_date: todayEastern(),
   notes: '', assigned_to: '',
 }
 
 export default function ClientNurture() {
-  const [tab, setTab] = useState('care')
+  const [tab, setTab] = useState('journey')
 
   // ── Care state ────────────────────────────────────────────────────────────
   const [careData, setCareData] = useState({ care: [], kpi: {} })
@@ -99,7 +104,7 @@ export default function ClientNurture() {
     await apiFetch(`/api/care/${item.id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ completed: 1, completed_date: new Date().toISOString().split('T')[0] }),
+      body: JSON.stringify({ completed: 1, completed_date: todayEastern() }),
     })
     loadCare()
   }
@@ -135,7 +140,7 @@ export default function ClientNurture() {
 
   const markWonBack = (c) => {
     if (!window.confirm(`Mark ${c.client_name || 'this client'} as won back?`)) return
-    patchWb(c.id, { status: 'won_back', won_back: 1, won_back_date: new Date().toISOString().split('T')[0] })
+    patchWb(c.id, { status: 'won_back', won_back: 1, won_back_date: todayEastern() })
   }
 
   const deleteWb = async (c) => {
@@ -158,7 +163,7 @@ export default function ClientNurture() {
 
   // ── Derived data ──────────────────────────────────────────────────────────
   const { care, kpi } = careData
-  const today = new Date().toISOString().split('T')[0]
+  const today = todayEastern()
 
   const pendingCare  = care.filter(r => !r.completed)
   const completedCare = care.filter(r => r.completed)
@@ -180,7 +185,8 @@ export default function ClientNurture() {
       {/* Tabs */}
       <div className="flex gap-1 mb-6 bg-gray-100 rounded-xl p-1 w-fit">
         {[
-          { id: 'care', label: '📞 Client Care', count: pendingCare.length },
+          { id: 'journey', label: '🗺 Journey', count: null },
+          { id: 'care', label: '📞 Care Queue', count: pendingCare.length },
           { id: 'winback', label: '🔄 Win-Back', count: wbActive.length },
         ].map(t => (
           <button
@@ -199,6 +205,139 @@ export default function ClientNurture() {
           </button>
         ))}
       </div>
+
+      {/* ── JOURNEY PIPELINE TAB ──────────────────────────────────────────── */}
+      {tab === 'journey' && (() => {
+        // Group all care records by client name
+        const byClient = {}
+        care.forEach(r => {
+          const key = r.client_name || 'Unknown'
+          if (!byClient[key]) byClient[key] = {}
+          byClient[key][r.care_type] = r
+        })
+
+        // Sort: clients with overdue stages first, then by soonest upcoming
+        const clientList = Object.entries(byClient).map(([name, stages]) => {
+          const hasOverdue = JOURNEY_STAGES.some(s => {
+            const r = stages[s.key]
+            return r && !r.completed && daysUntil(r.scheduled_date) < 0
+          })
+          const nextPending = JOURNEY_STAGES.map(s => stages[s.key]).find(r => r && !r.completed)
+          return { name, stages, hasOverdue, nextDate: nextPending?.scheduled_date }
+        }).sort((a, b) => {
+          if (a.hasOverdue !== b.hasOverdue) return a.hasOverdue ? -1 : 1
+          if (a.nextDate && b.nextDate) return a.nextDate < b.nextDate ? -1 : 1
+          return a.name < b.name ? -1 : 1
+        })
+
+        const overdueCount = clientList.filter(c => c.hasOverdue).length
+
+        return (
+          <>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
+              {[
+                { label: 'Active Clients', value: clientList.length },
+                { label: 'Overdue Touchpoints', value: overdueCount, warn: overdueCount > 0 },
+                { label: 'Completed This Mo', value: kpi.completed_month ?? '—' },
+                { label: 'Total Gifts Sent', value: kpi.gifts_sent ?? '—' },
+              ].map(({ label, value, warn }) => (
+                <div key={label} className="card text-center py-4">
+                  <p className="text-xs text-gray-400 uppercase tracking-wide mb-1">{label}</p>
+                  <p className={`text-2xl font-bold ${warn ? 'text-warn' : 'text-ink'}`}>{value}</p>
+                </div>
+              ))}
+            </div>
+
+            <div className="card mb-4 bg-blue-50 border-blue-100">
+              <p className="text-xs text-blue-700">
+                <strong>Auto-populated:</strong> When a lead is marked as recurring, the full 5-touchpoint journey is automatically created here.
+                {' '}Scorecard alerts and gifts can be added manually via the <button onClick={() => setTab('care')} className="underline font-semibold">Care Queue</button>.
+              </p>
+            </div>
+
+            {clientList.length === 0 ? (
+              <div className="card text-center py-12 text-gray-400 text-sm">
+                <p className="text-2xl mb-2">🌱</p>
+                <p className="font-medium text-ink mb-1">No client journeys yet</p>
+                <p className="text-xs">Mark a lead as recurring in the Client Log to auto-generate the care timeline.</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {clientList.map(({ name, stages, hasOverdue }) => {
+                  const allDone = JOURNEY_STAGES.every(s => stages[s.key]?.completed)
+                  return (
+                    <div key={name} className={`card border ${hasOverdue ? 'border-warn/40 bg-yellow-50/20' : 'border-gray-100'}`}>
+                      <div className="flex items-center justify-between mb-3">
+                        <div>
+                          <span className="font-semibold text-ink">{name}</span>
+                          {allDone && <span className="ml-2 text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-semibold">✓ Journey Complete</span>}
+                          {hasOverdue && <span className="ml-2 text-xs text-warn font-semibold">⚠ Overdue</span>}
+                        </div>
+                      </div>
+
+                      {/* Stage timeline */}
+                      <div className="flex items-start gap-0 overflow-x-auto pb-1">
+                        {JOURNEY_STAGES.map((stage, idx) => {
+                          const r = stages[stage.key]
+                          const until = r ? daysUntil(r.scheduled_date) : null
+                          const isOverdue = r && !r.completed && until !== null && until < 0
+                          const isComplete = r?.completed
+                          const isPending = r && !r.completed && !isOverdue
+                          const isMissing = !r
+
+                          const dotColor = isComplete ? 'bg-green-500 border-green-500'
+                            : isOverdue ? 'bg-warn border-warn'
+                            : isPending ? 'bg-blue-400 border-blue-400'
+                            : 'bg-gray-200 border-gray-200'
+
+                          const labelColor = isComplete ? 'text-green-600'
+                            : isOverdue ? 'text-warn'
+                            : isPending ? 'text-blue-500'
+                            : 'text-gray-300'
+
+                          return (
+                            <div key={stage.key} className="flex items-start flex-1 min-w-[90px]">
+                              <div className="flex flex-col items-center flex-1">
+                                {/* Node */}
+                                <button
+                                  className={`w-8 h-8 rounded-full border-2 flex items-center justify-center text-white text-xs font-bold shrink-0 ${dotColor} ${r && !isComplete ? 'cursor-pointer hover:opacity-80' : 'cursor-default'}`}
+                                  title={r ? `${stage.short}: ${r.scheduled_date}${isComplete ? ' ✓' : ''}` : 'Not scheduled'}
+                                  onClick={() => { if (r && !isComplete) completeCare(r) }}
+                                >
+                                  {isComplete ? '✓' : idx + 1}
+                                </button>
+                                {/* Label */}
+                                <span className={`text-xs mt-1 font-medium text-center leading-tight ${labelColor}`}>{stage.short}</span>
+                                {/* Date/status */}
+                                {r && (
+                                  <span className="text-xs text-gray-400 text-center mt-0.5 leading-tight">
+                                    {isComplete
+                                      ? r.completed_date
+                                      : isOverdue
+                                        ? `${Math.abs(until)}d late`
+                                        : until === 0 ? 'Today'
+                                        : `in ${until}d`
+                                    }
+                                  </span>
+                                )}
+                                {isMissing && <span className="text-xs text-gray-300 mt-0.5">—</span>}
+                              </div>
+                              {/* Connector line */}
+                              {idx < JOURNEY_STAGES.length - 1 && (
+                                <div className={`h-0.5 flex-1 mt-4 mx-1 ${isComplete ? 'bg-green-300' : 'bg-gray-100'}`} />
+                              )}
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </>
+        )
+      })()}
 
       {/* ── CLIENT CARE TAB ────────────────────────────────────────────────── */}
       {tab === 'care' && (

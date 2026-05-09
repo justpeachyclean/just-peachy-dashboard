@@ -267,7 +267,7 @@ function TeamMembers() {
                     {u.role}
                   </span>
                 </td>
-                <td className="py-2 pr-3 text-gray-400 text-xs">{u.last_login ? new Date(u.last_login).toLocaleDateString() : 'Never'}</td>
+                <td className="py-2 pr-3 text-gray-400 text-xs">{u.last_login ? new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', month: 'short', day: 'numeric', year: 'numeric' }).format(new Date(u.last_login.replace(' ','T')+'Z')) : 'Never'}</td>
                 <td className="py-2">
                   <div className="flex items-center gap-2">
                     {resetId === u.id ? (
@@ -360,7 +360,7 @@ function AuditLog() {
           <tbody className="divide-y divide-gray-50">
             {entries.slice(0, 50).map(e => (
               <tr key={e.id}>
-                <td className="py-1.5 pr-3 text-gray-400 text-xs whitespace-nowrap">{new Date(e.created_at).toLocaleString()}</td>
+                <td className="py-1.5 pr-3 text-gray-400 text-xs whitespace-nowrap">{new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }).format(new Date((e.created_at||'').replace(' ','T')+'Z'))}</td>
                 <td className="py-1.5 pr-3 text-gray-600 text-xs">{e.user || 'system'}</td>
                 <td className="py-1.5 pr-3 text-xs">
                   <span className="bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded font-mono">{e.action_type}</span>

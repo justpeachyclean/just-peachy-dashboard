@@ -31,6 +31,59 @@ function visitsPerYear(frequency) {
   return VISITS_PER_YEAR[f] ?? null
 }
 
+// ── Client care pipeline auto-creation ─────────────────────────────────────
+// Days between recurring cleans by frequency
+const CLEAN_INTERVAL_DAYS = {
+  weekly:          7,
+  biweekly:        14,
+  'bi-weekly':     14,
+  monthly:         28,
+  'every 4 weeks': 28,
+  'tri-weekly':    10,
+}
+
+function addDays(dateStr, days) {
+  // Use noon UTC to dodge DST edge cases
+  const d = new Date(dateStr + 'T12:00:00Z')
+  d.setUTCDate(d.getUTCDate() + days)
+  return d.toISOString().split('T')[0]
+}
+
+function addMonths(dateStr, months) {
+  const d = new Date(dateStr + 'T12:00:00Z')
+  d.setUTCMonth(d.getUTCMonth() + months)
+  return d.toISOString().split('T')[0]
+}
+
+function createCareTimeline(clientName, frequency, startDate) {
+  const base = startDate || new Date().toISOString().split('T')[0]
+  const f = (frequency || '').toLowerCase().trim()
+  const interval = CLEAN_INTERVAL_DAYS[f] || 14  // default biweekly if unknown
+
+  // 4th recurring = 3 cleans after the 1st recurring
+  // 6th recurring = 5 cleans after the 1st recurring
+  const fourthOffset = interval * 3
+  const sixthOffset  = interval * 5
+
+  const touchpoints = [
+    { care_type: 'first_recurring',  scheduled_date: base },
+    { care_type: 'fourth_recurring', scheduled_date: addDays(base, fourthOffset) },
+    { care_type: 'sixth_recurring',  scheduled_date: addDays(base, sixthOffset) },
+    { care_type: 'six_month',        scheduled_date: addMonths(base, 6) },
+    { care_type: 'one_year',         scheduled_date: addMonths(base, 12) },
+  ]
+
+  const stmt = db.prepare(`
+    INSERT INTO client_care (client_name, care_type, scheduled_date, notes)
+    VALUES (?,?,?,?)
+  `)
+  for (const tp of touchpoints) {
+    try {
+      stmt.run(clientName, tp.care_type, tp.scheduled_date, 'Auto-created from lead conversion')
+    } catch (_) { /* ignore duplicates */ }
+  }
+}
+
 // Annual value = initial_clean_price + recurring_price × remaining_visits
 // Falls back to old flat calculation if only one price provided
 function calcAnnualValue(initialPrice, recurringPrice, frequency, fallbackPrice, cfg) {
@@ -144,6 +197,12 @@ router.post('/', (req, res) => {
   )
 
   audit(req, 'lead_added', `${client_name || 'Unknown'}`)
+
+  // Auto-create care pipeline if new lead is already recurring
+  if (recurring_retained) {
+    createCareTimeline(client_name || 'Unknown', frequency, record_date)
+  }
+
   res.json({ ok: true })
 })
 
@@ -195,6 +254,16 @@ router.patch('/:id', (req, res) => {
     existing.id
   )
   audit(req, 'lead_updated', `ID ${existing.id}`)
+
+  // Auto-create care pipeline when a lead goes recurring for the first time
+  if (recurring_retained !== undefined && (recurring_retained ? 1 : 0) === 1 && !existing.recurring_retained) {
+    createCareTimeline(
+      updated.client_name || existing.client_name || 'Unknown',
+      updated.frequency   || existing.frequency,
+      new Date().toISOString().split('T')[0]
+    )
+  }
+
   res.json({ ok: true })
 })
 

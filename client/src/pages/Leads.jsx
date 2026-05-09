@@ -139,7 +139,7 @@ function FunnelStage({ label, from, to, rate, goal, stretch, showArrow = true })
 }
 
 const BLANK_FORM = {
-  record_date: new Date().toISOString().slice(0, 10),
+  record_date: new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York' }).format(new Date()),
   rep_name: 'Lexi',
   client_name: '',
   frequency: '',
@@ -185,7 +185,7 @@ export default function Leads() {
   const openEdit = r => {
     setEditId(r.id)
     setForm({
-      record_date:          r.record_date || new Date().toISOString().slice(0, 10),
+      record_date:          r.record_date || new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York' }).format(new Date()),
       rep_name:             r.rep_name || '',
       client_name:          r.client_name || '',
       frequency:            r.frequency || '',

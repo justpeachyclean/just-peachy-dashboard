@@ -61,7 +61,7 @@ function AddApplicantModal({ onClose, onSaved }) {
     email: '',
     stage: 'applied',
     position: '',
-    stage_date: new Date().toISOString().split('T')[0],
+    stage_date: new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York' }).format(new Date()),
     notes: '',
   })
   const [saving, setSaving] = useState(false)
@@ -156,7 +156,7 @@ function PipelineTab({ year, setYear }) {
   useEffect(() => { load() }, [year, stageFilter])
 
   async function updateStage(id, stage) {
-    const today = new Date().toISOString().split('T')[0]
+    const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York' }).format(new Date())
     const body = { stage, stage_date: today }
     if (stage === 'hired') body.hired = true
     if (stage === 'no_show') body.no_show = true

@@ -1,7 +1,7 @@
 import { apiFetch } from '../AuthContext'
 import { useState } from 'react'
 
-const today = () => new Date().toISOString().split('T')[0]
+const today = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York' }).format(new Date())
 
 const INITIAL = {
   entry_date: today(),

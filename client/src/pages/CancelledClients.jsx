@@ -253,9 +253,9 @@ function CancelRow({ row: r, onSaved, onDeleted }) {
                 onDeleted()
               }}
               disabled={deleting}
-              className="text-xs text-gray-300 hover:text-danger transition-colors"
+              className="text-xs font-medium text-red-400 hover:text-red-600 transition-colors flex items-center gap-1"
             >
-              {deleting ? 'Deleting…' : '✕ Delete record'}
+              {deleting ? 'Deleting…' : '🗑 Delete record'}
             </button>
             <div className="flex gap-2">
               <button onClick={() => { setOpen(false); setEd({}) }} className="text-sm text-gray-500 hover:text-gray-700">Cancel</button>
@@ -271,7 +271,7 @@ function CancelRow({ row: r, onSaved, onDeleted }) {
 }
 
 const BLANK = {
-  client_name:'', cancel_date: new Date().toISOString().split('T')[0],
+  client_name:'', cancel_date: (new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York' }).format(new Date())),
   reason_code:'', client_quote:'', save_attempted: false,
   save_outcome:'Lost', solution_offered:'', frequency:'',
   recurring_months:'', price_per_visit:'', notes:'',

@@ -227,7 +227,7 @@ export default function BonusTracker() {
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold text-ink">Bonus Tracker</h1>
-          <p className="text-sm text-gray-500 mt-0.5">Per-rep tier calculations &amp; payout calendar</p>
+          <p className="text-sm text-gray-500 mt-0.5">Per-rep tier calculations &amp; payout calendar · <span className="text-[11px] text-gray-400">🔄 calculated from 🤖 GHL closed leads + ✏️ RGE (manual, weekly via Entry)</span></p>
         </div>
         <div className="flex gap-2 flex-wrap justify-end">
           <div className="flex items-center gap-1">

@@ -111,7 +111,7 @@ export default function Feedback() {
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold text-ink">Client Feedback</h1>
-          <p className="text-sm text-gray-500 mt-0.5">Scorecards, reviews, and satisfaction trends</p>
+          <p className="text-sm text-gray-500 mt-0.5">Scorecards, reviews, and satisfaction trends · <span className="text-[11px] text-gray-400">🤖 reviews auto via GHL · ✏️ scorecard ratings entered manually</span></p>
         </div>
         <div className="flex items-center gap-3">
           <select

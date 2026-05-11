@@ -82,7 +82,7 @@ export default function UnitEconomics() {
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold text-ink">Unit Economics</h1>
-          <p className="text-sm text-gray-500 mt-0.5">YTD {year} — CAC, LTV, turnover cost &amp; productivity</p>
+          <p className="text-sm text-gray-500 mt-0.5">YTD {year} — CAC, LTV, turnover cost &amp; productivity · <span className="text-[11px] text-gray-400">🔄 all calculated — no manual entry needed here</span></p>
         </div>
         <div className="flex items-center gap-3">
           <button

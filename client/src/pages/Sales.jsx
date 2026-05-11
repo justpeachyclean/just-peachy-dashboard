@@ -132,7 +132,7 @@ export default function Sales() {
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold text-ink">Sales &amp; Leads</h1>
-          <p className="text-sm text-gray-500 mt-0.5">Monthly funnel performance</p>
+          <p className="text-sm text-gray-500 mt-0.5">Monthly funnel performance · <span className="text-[11px] text-gray-400">🔄 hybrid: GHL auto-tracks leads · use "+ Add / Edit Month" for revenue &amp; retention</span></p>
         </div>
         <div className="flex gap-2">
           <button
@@ -185,6 +185,7 @@ export default function Sales() {
             <p className="text-xs text-gray-400 mt-1">
               YTD cancellation impact: {fmt$(totalCancellations * annualValuePerClient)}
             </p>
+            <p className="text-[10px] text-gray-300 mt-1 italic">Same avg as Value Gained — both use revenue ÷ active clients. To get per-client figures, log price on each cancellation record.</p>
           </div>
         </div>
       )}
@@ -192,7 +193,12 @@ export default function Sales() {
       {/* Monthly funnel table */}
       <div className="card mb-6 overflow-x-auto">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="font-semibold text-ink">Monthly Funnel</h2>
+          <div>
+            <h2 className="font-semibold text-ink">Monthly Funnel</h2>
+            <p className="text-[10px] text-gray-400 italic mt-0.5">
+              🤖 Leads / quotes / closes auto via GHL &nbsp;·&nbsp; ✏️ Revenue, cancellations &amp; retention via monthly summary
+            </p>
+          </div>
           <div className="flex gap-3 text-xs text-gray-400">
             <span><span className="inline-block w-2 h-2 rounded-full bg-ok mr-1" />At goal</span>
             <span><span className="inline-block w-2 h-2 rounded-full bg-warn mr-1" />Near goal</span>
@@ -212,9 +218,9 @@ export default function Sales() {
                 <th className="text-left py-2 pr-3 font-medium">Month</th>
                 <th className="text-right py-2 px-2 font-medium">Leads In</th>
                 <th className="text-right py-2 px-2 font-medium">Quoted</th>
-                <th className="text-right py-2 px-2 font-medium">Quote %<br/><span className="text-gray-300 normal-case font-normal">goal 90%</span></th>
+                <th className="text-right py-2 px-2 font-medium">Quote %<br/><span className="text-gray-400 normal-case font-normal">goal 90%</span></th>
                 <th className="text-right py-2 px-2 font-medium">Closed</th>
-                <th className="text-right py-2 px-2 font-medium">Close %<br/><span className="text-gray-300 normal-case font-normal">min 40%</span></th>
+                <th className="text-right py-2 px-2 font-medium">Close %<br/><span className="text-gray-400 normal-case font-normal">min 40%</span></th>
                 <th className="text-right py-2 px-2 font-medium">Move-Outs</th>
                 <th className="text-right py-2 px-2 font-medium">Initials</th>
                 <th className="text-right py-2 px-2 font-medium">Retained</th>

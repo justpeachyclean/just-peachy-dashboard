@@ -24,18 +24,47 @@ router.get('/summary', (req, res) => {
 
   const revenue = ms?.revenue > 0 ? ms.revenue : mcRevenue.total
 
-  // Recurring clients
-  const mcRecurring = db.prepare(`
-    SELECT COUNT(DISTINCT client_id) AS total FROM maidcentral_events WHERE event_type='recurring_client'
-  `).get()
-  const recurringClients = ms?.recurring_clients ?? mcRecurring.total
-
-  // Cancellations
+  // Cancellations (computed first — needed for recurring client auto-calc)
   const mcCancellations = db.prepare(`
     SELECT COUNT(*) AS total FROM maidcentral_events
     WHERE event_type='cancellation' AND event_date BETWEEN ? AND ?
   `).get(monthStart, monthEnd)
   const cancellations = ms?.cancellations ?? mcCancellations.total
+
+  // Recurring clients — use snapshot if available, otherwise auto-calculate forward
+  // from the most recent known baseline: baseline + new_closes - cancellations
+  const mcRecurring = db.prepare(`
+    SELECT COUNT(DISTINCT client_id) AS total FROM maidcentral_events WHERE event_type='recurring_client'
+  `).get()
+
+  let recurringClients = ms?.recurring_clients
+  let recurringClientsEstimated = false
+
+  if (recurringClients == null) {
+    const baseline = db.prepare(`
+      SELECT month, recurring_clients FROM monthly_sales
+      WHERE recurring_clients IS NOT NULL AND month < ?
+      ORDER BY month DESC LIMIT 1
+    `).get(month)
+
+    if (baseline) {
+      // Sum closes & cancellations for all complete months between baseline and now
+      const pastChanges = db.prepare(`
+        SELECT
+          COALESCE(SUM(leads_closed), 0) AS closed,
+          COALESCE(SUM(cancellations), 0) AS cancelled
+        FROM monthly_sales
+        WHERE month > ? AND month < ?
+      `).get(baseline.month, month)
+
+      // leadsClosed and cancellations for the current month are computed below;
+      // use a placeholder — will be patched after lead counts are resolved
+      recurringClients = baseline.recurring_clients + pastChanges.closed - pastChanges.cancelled
+      recurringClientsEstimated = true // current-month delta added after leadsClosed computed
+    } else {
+      recurringClients = mcRecurring.total
+    }
+  }
 
   // Lead funnel: live counts from lead_records take priority over monthly_sales
   const leadCounts = db.prepare(`
@@ -55,6 +84,13 @@ router.get('/summary', (req, res) => {
   const recurringClosed     = leadCounts.leads_in > 0 ? leadCounts.recurring_closed : (ms?.recurring_closed ?? 0)
   const initialCleansBooked = leadCounts.initial_cleans_booked ?? 0
   const initialToRecurring  = leadCounts.initial_to_recurring  ?? 0
+
+  // Patch in current-month closes & cancellations for estimated recurring client count
+  // Use recurringClosed (non-one-time) where available; fall back to leadsClosed
+  if (recurringClientsEstimated) {
+    const newThisMonth = recurringClosed > 0 ? recurringClosed : leadsClosed
+    recurringClients = recurringClients + newThisMonth - cancellations
+  }
 
   // Marketing spend: QB > monthly_sales > manual entries
   const qbMarketing = db.prepare(`
@@ -77,7 +113,8 @@ router.get('/summary', (req, res) => {
       COALESCE(SUM(staff_quit), 0) AS quit,
       COALESCE(SUM(staff_fired), 0) AS fired,
       COALESCE(SUM(call_ins), 0) AS call_ins,
-      COALESCE(SUM(skips), 0) AS skips_sum
+      COALESCE(SUM(skips), 0) AS skips_sum,
+      COALESCE(SUM(gift_card_sales), 0) AS gift_card_sales
     FROM manual_entries WHERE entry_date BETWEEN ? AND ?
   `).get(monthStart, monthEnd)
 
@@ -92,6 +129,7 @@ router.get('/summary', (req, res) => {
     month,
     revenue,
     recurring_clients: recurringClients,
+    recurring_clients_estimated: recurringClientsEstimated,
     cancellations,
     attrition_rate: attritionRate,
     leads_in: leadsIn,
@@ -109,6 +147,7 @@ router.get('/summary', (req, res) => {
     complaints: ms?.complaints ?? 0,
     marketing_spend: marketingSpend,
     staff: staffChanges,
+    gift_card_sales_mtd: staffChanges.gift_card_sales || 0,
     last_entry_date: lastEntry?.entry_date || null,
     settings: cfg,
   })

@@ -6,7 +6,7 @@ import {
   ResponsiveContainer, ReferenceLine, Cell
 } from 'recharts'
 
-function KpiCard({ label, value, sub, borderColor = 'border-brand', badge }) {
+function KpiCard({ label, value, sub, borderColor = 'border-brand', badge, source }) {
   return (
     <div className={`kpi-card ${borderColor}`}>
       <div className="flex items-start justify-between">
@@ -15,6 +15,7 @@ function KpiCard({ label, value, sub, borderColor = 'border-brand', badge }) {
       </div>
       <p className="text-3xl font-bold text-ink mt-2">{value}</p>
       {sub && <p className="text-xs text-gray-400 mt-1">{sub}</p>}
+      {source && <p className="text-[10px] text-gray-400 mt-1.5 italic">{source}</p>}
     </div>
   )
 }
@@ -120,12 +121,19 @@ export default function Overview() {
           value={summary.recurring_clients.toLocaleString()}
           borderColor="border-brand"
           sub={`${summary.cancellations} cancelled this month`}
+          badge={summary.recurring_clients_estimated
+            ? <span className="text-xs font-medium text-amber-500 bg-amber-50 px-1.5 py-0.5 rounded">est.</span>
+            : null}
+          source={summary.recurring_clients_estimated
+            ? "🔄 estimated: last snapshot + new closes − cancellations · update via Entry"
+            : "🔄 auto via MaidCentral · manual snapshot via Entry"}
         />
         <KpiCard
           label="MTD Revenue"
           value={fmt$(summary.revenue)}
           borderColor="border-peach"
           sub={dailyGoal ? `Daily goal: ${fmt$(dailyGoal)}` : 'Set goal in Settings'}
+          source="🤖 auto via MaidCentral · Zapier"
         />
         <KpiCard
           label="Attrition Rate"
@@ -138,6 +146,7 @@ export default function Overview() {
               ? <span className="text-xs font-semibold text-warn">▲ Watch</span>
               : <span className="text-xs font-semibold text-ok">▲ Good</span>
           }
+          source="🤖 auto-calculated from cancellations ÷ clients"
         />
         <KpiCard
           label="Close Rate (MTD)"
@@ -149,6 +158,7 @@ export default function Overview() {
               ? <span className="text-xs font-semibold text-ok">✓ On Track</span>
               : <span className="text-xs font-semibold text-danger">✗ Below 40%</span>
             : null}
+          source="🤖 auto via GHL · Zapier"
         />
       </div>
 
@@ -157,6 +167,7 @@ export default function Overview() {
         <div className="flex items-center justify-between mb-4">
           <div>
             <h2 className="font-semibold text-ink">Revenue vs Goal — {new Date().getFullYear()}</h2>
+            <p className="text-[10px] text-gray-400 italic mt-0.5">🤖 auto via MaidCentral · falls back to manual Sales summaries</p>
             <p className="text-xs text-gray-400 mt-0.5">
               YTD: <span className="text-ink font-semibold">{fmt$(ytdRevenue)}</span>
               {ytdGoal > 0 && (
@@ -214,16 +225,48 @@ export default function Overview() {
 
       {/* Secondary KPIs */}
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 mb-6">
-        <KpiCard label="Cancellations (MTD)" value={summary.cancellations} borderColor="border-gray-200" />
-        <KpiCard label="Skips (MTD)" value={summary.skips} borderColor="border-gray-200" />
+        <KpiCard label="Cancellations (MTD)" value={summary.cancellations} borderColor="border-gray-200"
+          source="🤖 auto via MaidCentral · Zapier" />
+        <KpiCard label="Skips (MTD)" value={summary.skips} borderColor="border-gray-200"
+          source="✏️ manual · logged via Entry page daily" />
         <KpiCard label="Retention Rate" value={summary.initial_cleans > 0 ? fmtPct(summary.retained / summary.initial_cleans) : '—'}
           sub={`${summary.retained} of ${summary.initial_cleans} initials kept`}
-          borderColor="border-gray-200" />
+          borderColor="border-gray-200"
+          source="🔄 GHL new clients · manual initials & retained" />
       </div>
+
+      {/* Gift Card Sales */}
+      {(summary.gift_card_sales_mtd > 0) && (
+        <div className="card mb-5 border border-peach/30 bg-peach/5">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Gift Card Sales (MTD)</p>
+              <p className="text-3xl font-bold text-ink mt-1">{fmt$(summary.gift_card_sales_mtd)}</p>
+              <p className="text-[10px] text-gray-400 italic mt-1">🔄 Gift Up auto via Zapier (coming soon) · ✏️ manual via Entry page</p>
+            </div>
+            <Link to="/entry" className="text-xs text-sage hover:underline">+ Log sale →</Link>
+          </div>
+        </div>
+      )}
+      {(summary.gift_card_sales_mtd === 0) && (
+        <div className="card mb-5 border border-gray-100">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Gift Card Sales (MTD)</p>
+              <p className="text-3xl font-bold text-gray-300 mt-1">$0</p>
+              <p className="text-[10px] text-gray-400 italic mt-1">🔄 Gift Up auto via Zapier (coming soon) · ✏️ manual via Entry page</p>
+            </div>
+            <Link to="/entry" className="text-xs text-sage hover:underline">+ Log sale →</Link>
+          </div>
+        </div>
+      )}
 
       {/* Staff */}
       <div className="card mb-5">
-        <h2 className="text-sm font-semibold text-gray-700 mb-4">Staff Activity (MTD)</h2>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-sm font-semibold text-gray-700">Staff Activity (MTD)</h2>
+          <span className="text-[10px] text-gray-400 italic">✏️ manual · logged via Entry page</span>
+        </div>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-center">
           <div><p className="text-2xl font-bold text-ok">{summary.staff.new_hires}</p><p className="text-xs text-gray-500 mt-1">New Hires</p></div>
           <div><p className="text-2xl font-bold text-warn">{summary.staff.quit}</p><p className="text-xs text-gray-500 mt-1">Quit</p></div>
@@ -231,6 +274,7 @@ export default function Overview() {
           <div><p className="text-2xl font-bold text-ink">{summary.staff.call_ins}</p><p className="text-xs text-gray-500 mt-1">Call-ins</p></div>
         </div>
       </div>
+
 
       {!dailyGoal && (
         <div className="flex items-center gap-3 bg-brand/5 border border-brand/20 rounded-xl px-4 py-3 text-sm">

@@ -5,6 +5,8 @@ import { todayEastern, daysUntilEastern, daysSinceEastern } from '../utils/dates
 
 // ── Care types ──────────────────────────────────────────────────────────────
 const CARE_TYPES = {
+  welcome_call:      { label: 'Welcome Call',        icon: '🎉', color: 'bg-rose-50 text-rose-700 border-rose-100' },
+  otc_24hr_call:     { label: 'OTC 24-Hr Call',      icon: '🕐', color: 'bg-orange-50 text-orange-700 border-orange-100' },
   first_recurring:   { label: '1st Recurring Call',  icon: '📞', color: 'bg-blue-50 text-blue-700 border-blue-100' },
   fourth_recurring:  { label: '4th Recurring Call',  icon: '📞', color: 'bg-indigo-50 text-indigo-700 border-indigo-100' },
   sixth_recurring:   { label: '6th Recurring Call',  icon: '📞', color: 'bg-violet-50 text-violet-700 border-violet-100' },
@@ -16,6 +18,8 @@ const CARE_TYPES = {
 
 // Pipeline stages in order
 const JOURNEY_STAGES = [
+  { key: 'welcome_call',     short: 'Welcome' },
+  { key: 'otc_24hr_call',   short: 'OTC 24hr' },
   { key: 'first_recurring',  short: '1st Call' },
   { key: 'fourth_recurring', short: '4th Call' },
   { key: 'sixth_recurring',  short: '6th Call' },
@@ -101,10 +105,21 @@ export default function ClientNurture() {
   }
 
   const completeCare = async (item) => {
+    if (!window.confirm(`Mark "${item.care_type.replace(/_/g, ' ')}" as done for ${item.client_name}?`)) return
     await apiFetch(`/api/care/${item.id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ completed: 1, completed_date: todayEastern() }),
+    })
+    loadCare()
+  }
+
+  const uncompleteCare = async (item) => {
+    if (!window.confirm(`Undo completion of "${item.care_type.replace(/_/g, ' ')}" for ${item.client_name}?`)) return
+    await apiFetch(`/api/care/${item.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ completed: 0 }),
     })
     loadCare()
   }
@@ -178,7 +193,7 @@ export default function ClientNurture() {
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold text-ink">Client Nurture</h1>
-          <p className="text-sm text-gray-500 mt-0.5">Care calls, milestones, gifts, and win-back queue</p>
+          <p className="text-sm text-gray-500 mt-0.5">Care calls, milestones, gifts, and win-back queue · <span className="text-[11px] text-gray-400">✏️ all manual — log care calls, gifts &amp; win-back outreach here</span></p>
         </div>
       </div>
 
@@ -300,9 +315,17 @@ export default function ClientNurture() {
                               <div className="flex flex-col items-center flex-1">
                                 {/* Node */}
                                 <button
-                                  className={`w-8 h-8 rounded-full border-2 flex items-center justify-center text-white text-xs font-bold shrink-0 ${dotColor} ${r && !isComplete ? 'cursor-pointer hover:opacity-80' : 'cursor-default'}`}
-                                  title={r ? `${stage.short}: ${r.scheduled_date}${isComplete ? ' ✓' : ''}` : 'Not scheduled'}
-                                  onClick={() => { if (r && !isComplete) completeCare(r) }}
+                                  className={`w-8 h-8 rounded-full border-2 flex items-center justify-center text-white text-xs font-bold shrink-0 ${dotColor} ${r ? 'cursor-pointer hover:opacity-80' : 'cursor-default'}`}
+                                  title={r
+                                    ? isComplete
+                                      ? `✓ Done ${r.completed_date}${r.notes ? ' — ' + r.notes : ''} — click to undo`
+                                      : `${stage.short}: ${r.scheduled_date}${r.notes ? ' — ' + r.notes : ''} — click to mark done`
+                                    : 'Not scheduled'}
+                                  onClick={() => {
+                                    if (!r) return
+                                    if (isComplete) uncompleteCare(r)
+                                    else completeCare(r)
+                                  }}
                                 >
                                   {isComplete ? '✓' : idx + 1}
                                 </button>
@@ -431,7 +454,7 @@ export default function ClientNurture() {
                   </div>
                   <div className="col-span-2 sm:col-span-3">
                     <label className="form-label">Notes</label>
-                    <input className="form-input" value={addCareForm.notes} placeholder="Any context or reminders…"
+                    <textarea rows={2} className="form-input" value={addCareForm.notes} placeholder="Call notes, what was discussed, follow-ups…"
                       onChange={e => setAddCareForm(p => ({ ...p, notes: e.target.value }))} />
                   </div>
                 </div>
@@ -498,6 +521,14 @@ export default function ClientNurture() {
                             ✓ Done
                           </button>
                         )}
+                        {item.completed && (
+                          <button
+                            onClick={() => uncompleteCare(item)}
+                            className="text-xs bg-gray-50 border border-gray-200 text-gray-500 px-2.5 py-1 rounded-lg hover:bg-yellow-50 hover:border-yellow-200 hover:text-yellow-700 font-medium"
+                          >
+                            ↩ Undo
+                          </button>
+                        )}
                         <button
                           onClick={() => { setEditingCare(isEditing ? null : item.id); setEditCareForm({ client_name: item.client_name, care_type: item.care_type, gift_type: item.gift_type || '', gift_notes: item.gift_notes || '', scheduled_date: item.scheduled_date || '', notes: item.notes || '', assigned_to: item.assigned_to || '' }) }}
                           className="text-xs border border-gray-200 bg-white px-2 py-1 rounded-lg hover:bg-gray-50 font-medium text-gray-600"
@@ -541,9 +572,10 @@ export default function ClientNurture() {
                           <input className="form-input py-1 text-sm" value={editCareForm.assigned_to}
                             onChange={e => setEditCareForm(p => ({ ...p, assigned_to: e.target.value }))} />
                         </div>
-                        <div>
+                        <div className="col-span-2 sm:col-span-3">
                           <label className="form-label text-xs">Notes</label>
-                          <input className="form-input py-1 text-sm" value={editCareForm.notes}
+                          <textarea rows={2} className="form-input text-sm py-1" value={editCareForm.notes}
+                            placeholder="Call notes, what was discussed, follow-ups…"
                             onChange={e => setEditCareForm(p => ({ ...p, notes: e.target.value }))} />
                         </div>
                         <div className="col-span-2 sm:col-span-3 flex justify-end gap-2">

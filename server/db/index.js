@@ -83,6 +83,8 @@ const migrations = [
   // Skips logged per day; client_count is a point-in-time snapshot (optional)
   `ALTER TABLE manual_entries ADD COLUMN skips INTEGER DEFAULT 0`,
   `ALTER TABLE manual_entries ADD COLUMN client_count INTEGER`,
+  // Gift card sales — manual entry or Gift Up Zapier webhook
+  `ALTER TABLE manual_entries ADD COLUMN gift_card_sales REAL`,
 ]
 for (const sql of migrations) {
   try { db.exec(sql) } catch (_) { /* column already exists — safe to ignore */ }

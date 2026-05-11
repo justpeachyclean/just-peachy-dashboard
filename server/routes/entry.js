@@ -15,6 +15,7 @@ router.post('/', (req, res) => {
     marketing_spend,
     skips = 0,
     client_count,     // snapshot of current recurring client count
+    gift_card_sales,  // optional — Gift Up or manual phone sale
     notes,
     entered_by = 'manager',
   } = req.body
@@ -24,8 +25,8 @@ router.post('/', (req, res) => {
   const insert = db.prepare(`
     INSERT INTO manual_entries
       (entry_date, new_hires, staff_quit, staff_fired, call_ins, absences,
-       revenue_generating_employees, marketing_spend, skips, client_count, notes, entered_by)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       revenue_generating_employees, marketing_spend, skips, client_count, gift_card_sales, notes, entered_by)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(entry_date, entered_by) DO UPDATE SET
       new_hires = excluded.new_hires,
       staff_quit = excluded.staff_quit,
@@ -36,6 +37,7 @@ router.post('/', (req, res) => {
       marketing_spend = excluded.marketing_spend,
       skips = excluded.skips,
       client_count = excluded.client_count,
+      gift_card_sales = excluded.gift_card_sales,
       notes = excluded.notes
   `)
 
@@ -50,6 +52,7 @@ router.post('/', (req, res) => {
     marketing_spend ?? null,
     skips || 0,
     client_count ?? null,
+    gift_card_sales ?? null,
     notes ?? null,
     entered_by
   )

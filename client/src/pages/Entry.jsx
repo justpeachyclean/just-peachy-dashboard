@@ -15,6 +15,7 @@ const INITIAL = {
   marketing_spend: '',
   skips: '',
   client_count: '',
+  gift_card_sales: '',
   notes: '',
   entered_by: 'manager',
 }
@@ -42,6 +43,7 @@ export default function Entry() {
       marketing_spend: form.marketing_spend !== '' ? parseFloat(form.marketing_spend) : null,
       skips: parseInt(form.skips) || 0,
       client_count: form.client_count !== '' ? parseInt(form.client_count) : null,
+      gift_card_sales: form.gift_card_sales !== '' ? parseFloat(form.gift_card_sales) : null,
       notes: form.notes || null,
       entered_by: form.entered_by,
     }
@@ -79,6 +81,25 @@ export default function Entry() {
         <button onClick={loadRecent} className="btn-secondary text-sm">
           View Recent
         </button>
+      </div>
+
+      {/* Automation guide */}
+      <div className="card mb-5 border border-blue-100 bg-blue-50/40">
+        <h3 className="text-xs font-semibold text-blue-700 mb-2">📋 What's automated vs. what you enter here</h3>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-1 text-[11px]">
+          <span className="text-green-600">🤖 Revenue ← auto via MaidCentral</span>
+          <span className="text-blue-600">✏️ New hires / quit / fired → here (daily)</span>
+          <span className="text-green-600">🤖 Leads, quotes, closes ← auto via GHL</span>
+          <span className="text-blue-600">✏️ Call-ins / absences → here (daily)</span>
+          <span className="text-green-600">🤖 Cancellations ← auto via MaidCentral</span>
+          <span className="text-blue-600">✏️ Revenue-Generating Employees → here (weekly)</span>
+          <span className="text-green-600">🤖 Hiring pipeline ← auto via Woot Recruit</span>
+          <span className="text-blue-600">✏️ Marketing spend → here (only if not in QuickBooks)</span>
+          <span className="text-green-600">🤖 New closed clients ← auto via GHL (Step 5. Accepted)</span>
+          <span className="text-blue-600">✏️ Client count snapshot → here (when it changes)</span>
+          <span className="text-green-600">🤖 Client feedback / reviews ← auto via GHL</span>
+          <span className="text-blue-600">✏️ Skips → here (daily)</span>
+        </div>
       </div>
 
       {/* Recent entries drawer */}
@@ -275,6 +296,27 @@ export default function Entry() {
               />
               <p className="text-xs text-gray-400 mt-1">Adds to monthly skip count on Overview</p>
             </div>
+          </div>
+        </div>
+
+        {/* Gift Card Sales */}
+        <div>
+          <h3 className="text-sm font-semibold text-gray-700 mb-3 pb-2 border-b">Gift Card Sales</h3>
+          <div>
+            <label className="form-label">Gift Cards Sold ($)</label>
+            <div className="relative">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">$</span>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                className="form-input pl-7"
+                placeholder="Leave blank if none sold today"
+                value={form.gift_card_sales}
+                onChange={e => set('gift_card_sales', e.target.value)}
+              />
+            </div>
+            <p className="text-xs text-gray-400 mt-1">Log Gift Up sales automatically via Zapier, or enter manual phone sales here</p>
           </div>
         </div>
 

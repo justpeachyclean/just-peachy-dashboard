@@ -297,7 +297,7 @@ export default function Leads() {
       <div className="flex items-start justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold text-ink">Client Log</h1>
-          <p className="text-sm text-gray-500 mt-0.5">Lead tracking — {monthLabel}</p>
+          <p className="text-sm text-gray-500 mt-0.5">Lead tracking — {monthLabel} · <span className="text-[11px] text-gray-400">🤖 new closes auto via GHL · Zapier (Step 5. Accepted) · ✏️ quotes &amp; details updated manually</span></p>
         </div>
         <div className="flex gap-2 flex-wrap justify-end">
           <button onClick={() => exportCsv(agencyFilename, agencyRows)} className="btn-secondary text-sm">

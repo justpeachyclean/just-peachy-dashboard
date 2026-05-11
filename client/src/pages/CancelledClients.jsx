@@ -334,7 +334,7 @@ export default function CancelledClients() {
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold text-ink">Cancelled Clients</h1>
-          <p className="text-sm text-gray-500 mt-0.5">Cancellation reasons, save attempts, and revenue impact</p>
+          <p className="text-sm text-gray-500 mt-0.5">Cancellation reasons, save attempts, and revenue impact · <span className="text-[11px] text-gray-400">🤖 cancellations auto via MaidCentral · Zapier · ✏️ reason codes &amp; save outcomes entered manually</span></p>
         </div>
         <div className="flex items-center gap-3">
           <select

@@ -549,7 +549,7 @@ export default function Hiring() {
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold text-ink">Hiring &amp; Staff</h1>
-          <p className="text-sm text-gray-500 mt-0.5">Applicant pipeline and staffing trends</p>
+          <p className="text-sm text-gray-500 mt-0.5">Applicant pipeline and staffing trends · <span className="text-[11px] text-gray-400">🤖 pipeline auto via Woot Recruit · ✏️ hires/fires/call-ins logged via Entry</span></p>
         </div>
       </div>
 

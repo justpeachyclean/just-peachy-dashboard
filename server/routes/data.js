@@ -480,6 +480,11 @@ router.get('/hiring', (req, res) => {
   })
 
   const MONTH_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+  // Check if staff_terminations table has any records this year — if so, use it for quit/fired
+  const hasTerminationRecords = db.prepare(
+    `SELECT COUNT(*) as n FROM staff_terminations WHERE SUBSTR(termination_date,1,4) = ?`
+  ).get(String(year)).n > 0
+
   const result = months.map(month => {
     const [y, m] = month.split('-')
     const start = `${y}-${m}-01`
@@ -496,16 +501,39 @@ router.get('/hiring', (req, res) => {
       FROM manual_entries WHERE entry_date BETWEEN ? AND ?
     `).get(start, end)
 
+    // If termination records exist for this year, use them for quit/fired (more accurate, per-name)
+    let quit = entries.quit
+    let fired = entries.fired
+    let terminations = []
+    if (hasTerminationRecords) {
+      const t = db.prepare(`
+        SELECT
+          COUNT(CASE WHEN termination_type = 'quit'  THEN 1 END) AS quit,
+          COUNT(CASE WHEN termination_type = 'fired' THEN 1 END) AS fired
+        FROM staff_terminations
+        WHERE SUBSTR(termination_date,1,7) = ?
+      `).get(month)
+      // Use terminations table counts (they override manual entry counts when present)
+      quit  = t.quit
+      fired = t.fired
+      terminations = db.prepare(
+        `SELECT id, employee_name, termination_type, termination_date, source, reason, notes
+         FROM staff_terminations WHERE SUBSTR(termination_date,1,7) = ?
+         ORDER BY termination_date DESC`
+      ).all(month)
+    }
+
     return {
       month,
       label: MONTH_SHORT[parseInt(m) - 1],
       new_hires: entries.new_hires,
-      quit: entries.quit,
-      fired: entries.fired,
+      quit,
+      fired,
       call_ins: entries.call_ins,
-      net_change: entries.new_hires - entries.quit - entries.fired,
+      net_change: entries.new_hires - quit - fired,
       avg_rge: entries.avg_rge ? Math.round(entries.avg_rge) : null,
-      has_data: entries.entry_count > 0,
+      has_data: entries.entry_count > 0 || quit > 0 || fired > 0,
+      terminations,
     }
   })
 
@@ -530,6 +558,22 @@ router.get('/hiring', (req, res) => {
     ? Math.round(recruitingSpendYTD / ytdNewHires)
     : null
 
+  // Headcount baseline for current-headcount estimation
+  const headcountBaseline = parseInt(cfg.staff_headcount_baseline) || null
+  const headcountBaselineDate = cfg.staff_headcount_baseline_date || null
+
+  // Current headcount estimate: baseline + all hires since baseline_date - all terminations since
+  let estimatedCurrentHeadcount = null
+  if (headcountBaseline !== null && headcountBaselineDate) {
+    const hiresAfter = db.prepare(
+      `SELECT COALESCE(SUM(new_hires),0) AS n FROM manual_entries WHERE entry_date > ?`
+    ).get(headcountBaselineDate).n
+    const termsAfter = db.prepare(
+      `SELECT COUNT(*) AS n FROM staff_terminations WHERE termination_date > ?`
+    ).get(headcountBaselineDate).n
+    estimatedCurrentHeadcount = headcountBaseline + hiresAfter - termsAfter
+  }
+
   res.json({
     year,
     months: result,
@@ -537,6 +581,10 @@ router.get('/hiring', (req, res) => {
     recruiting_spend_ytd: recruitingSpendYTD,
     cost_per_hire: costPerHire,
     ytd_new_hires: ytdNewHires,
+    headcount_baseline: headcountBaseline,
+    headcount_baseline_date: headcountBaselineDate,
+    estimated_current_headcount: estimatedCurrentHeadcount,
+    using_termination_records: hasTerminationRecords,
     inputs: { training_hours: trainingHours, hourly_cost: hourlyCost, ramp_days: rampDays, break_even_daily: breakEvenDaily },
   })
 })

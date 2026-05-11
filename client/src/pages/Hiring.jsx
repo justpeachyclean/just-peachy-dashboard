@@ -540,6 +540,257 @@ function StaffingTrendsTab({ year, setYear }) {
   )
 }
 
+function DeparturesTab({ year, setYear }) {
+  const [terminations, setTerminations] = useState([])
+  const [hiringData, setHiringData] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [baselineForm, setBaselineForm] = useState({ baseline: '', baseline_date: '' })
+  const [baselineSaving, setBaselineSaving] = useState(false)
+  const [addForm, setAddForm] = useState({ employee_name: '', termination_date: new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York' }).format(new Date()), termination_type: 'fired', reason: '' })
+  const [addSaving, setAddSaving] = useState(false)
+  const [addErr, setAddErr] = useState(null)
+
+  function loadAll() {
+    setLoading(true)
+    Promise.all([
+      apiFetch(`/api/staff/terminations?year=${year}`).then(r => r.json()),
+      apiFetch(`/api/data/hiring?year=${year}`).then(r => r.json()),
+    ]).then(([terms, hiring]) => {
+      setTerminations(terms)
+      setHiringData(hiring)
+      setBaselineForm({
+        baseline: hiring.headcount_baseline ?? '',
+        baseline_date: hiring.headcount_baseline_date ?? '',
+      })
+      setLoading(false)
+    }).catch(() => setLoading(false))
+  }
+
+  useEffect(() => { loadAll() }, [year])
+
+  async function toggleType(t) {
+    const next = t.termination_type === 'fired' ? 'quit' : 'fired'
+    await apiFetch(`/api/staff/terminations/${t.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ termination_type: next }),
+    })
+    loadAll()
+  }
+
+  async function deleteTermination(t) {
+    if (!confirm(`Delete ${t.employee_name}?`)) return
+    await apiFetch(`/api/staff/terminations/${t.id}`, { method: 'DELETE' })
+    loadAll()
+  }
+
+  async function saveBaseline(e) {
+    e.preventDefault()
+    setBaselineSaving(true)
+    await apiFetch('/api/staff/headcount', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        baseline: baselineForm.baseline !== '' ? parseInt(baselineForm.baseline) : null,
+        baseline_date: baselineForm.baseline_date || null,
+      }),
+    })
+    setBaselineSaving(false)
+    loadAll()
+  }
+
+  async function addDeparture(e) {
+    e.preventDefault()
+    if (!addForm.employee_name.trim()) return setAddErr('Name required')
+    setAddSaving(true)
+    setAddErr(null)
+    const r = await apiFetch('/api/staff/terminations', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...addForm, source: 'manual' }),
+    })
+    if (!r.ok) {
+      const d = await r.json().catch(() => ({}))
+      setAddErr(d.error || 'Failed to save')
+      setAddSaving(false)
+      return
+    }
+    setAddForm(f => ({ ...f, employee_name: '', reason: '' }))
+    setAddSaving(false)
+    loadAll()
+  }
+
+  const totalFired = terminations.filter(t => t.termination_type === 'fired').length
+  const totalQuit  = terminations.filter(t => t.termination_type === 'quit').length
+  const totalHiresYear = (hiringData?.months ?? []).reduce((s, m) => s + (m.new_hires || 0), 0)
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-5">
+        <div className="flex items-center gap-1">
+          <button onClick={() => setYear(y => y - 1)} className="text-gray-400 hover:text-ink px-2 py-1 rounded text-sm">‹</button>
+          <span className="text-sm font-medium text-gray-700 w-12 text-center">{year}</span>
+          <button onClick={() => setYear(y => y + 1)} className="text-gray-400 hover:text-ink px-2 py-1 rounded text-sm">›</button>
+        </div>
+        <p className="text-xs text-gray-400 italic">🤖 future terminations auto via MaidCentral webhook · ✏️ import historical below</p>
+      </div>
+
+      {/* Headcount baseline card */}
+      <div className="card mb-5">
+        <h2 className="text-sm font-semibold text-gray-700 mb-4">Current Headcount Estimate</h2>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+          {/* Left: set baseline */}
+          <form onSubmit={saveBaseline} className="space-y-3">
+            <p className="text-xs text-gray-400">Set a known headcount at a specific date. We'll add hires and subtract departures to estimate today's count.</p>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-gray-500 mb-1">Baseline Count</label>
+                <input
+                  type="number" min="0" className="input w-full" placeholder="e.g. 18"
+                  value={baselineForm.baseline}
+                  onChange={e => setBaselineForm(f => ({ ...f, baseline: e.target.value }))}
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-500 mb-1">As of Date</label>
+                <input
+                  type="date" className="input w-full"
+                  value={baselineForm.baseline_date}
+                  onChange={e => setBaselineForm(f => ({ ...f, baseline_date: e.target.value }))}
+                />
+              </div>
+            </div>
+            <button type="submit" className="btn-primary text-sm w-full" disabled={baselineSaving}>
+              {baselineSaving ? 'Saving...' : 'Save Baseline'}
+            </button>
+          </form>
+
+          {/* Right: estimated current */}
+          <div className="flex flex-col justify-center items-center text-center gap-2">
+            {hiringData?.estimated_current_headcount != null ? (
+              <>
+                <p className="text-4xl font-bold text-ink">{hiringData.estimated_current_headcount}</p>
+                <p className="text-xs text-gray-500">estimated current employees</p>
+                <p className="text-xs text-gray-400">
+                  baseline {hiringData.headcount_baseline} as of {hiringData.headcount_baseline_date}
+                  {' · '}+{totalHiresYear} hires, −{terminations.length} departures ({year})
+                </p>
+              </>
+            ) : (
+              <p className="text-gray-400 text-sm">Set a baseline to see estimated headcount.</p>
+            )}
+            {terminations.length > 0 && (
+              <div className="flex gap-4 mt-1">
+                <span className="text-xs text-danger font-medium">{totalFired} fired</span>
+                <span className="text-xs text-warn font-medium">{totalQuit} quit</span>
+                <span className="text-xs text-gray-400">{year} YTD</span>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Quick-add form */}
+      <div className="card mb-5">
+        <h2 className="text-sm font-semibold text-gray-700 mb-3">Log a Departure</h2>
+        <form onSubmit={addDeparture} className="flex flex-wrap gap-3 items-end">
+          {addErr && <p className="w-full text-danger text-xs">{addErr}</p>}
+          <div className="flex-1 min-w-[160px]">
+            <label className="block text-xs font-medium text-gray-500 mb-1">Employee Name *</label>
+            <input className="input w-full" placeholder="Full name" value={addForm.employee_name} onChange={e => setAddForm(f => ({ ...f, employee_name: e.target.value }))} />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-500 mb-1">Date</label>
+            <input type="date" className="input" value={addForm.termination_date} onChange={e => setAddForm(f => ({ ...f, termination_date: e.target.value }))} />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-500 mb-1">Type</label>
+            <select className="input" value={addForm.termination_type} onChange={e => setAddForm(f => ({ ...f, termination_type: e.target.value }))}>
+              <option value="fired">Fired</option>
+              <option value="quit">Quit</option>
+            </select>
+          </div>
+          <div className="flex-1 min-w-[140px]">
+            <label className="block text-xs font-medium text-gray-500 mb-1">Reason (optional)</label>
+            <input className="input w-full" placeholder="e.g. attendance" value={addForm.reason} onChange={e => setAddForm(f => ({ ...f, reason: e.target.value }))} />
+          </div>
+          <button type="submit" className="btn-primary text-sm whitespace-nowrap" disabled={addSaving}>
+            {addSaving ? 'Saving...' : '+ Add'}
+          </button>
+        </form>
+      </div>
+
+      {/* Terminations list */}
+      <div className="card overflow-x-auto">
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="font-semibold text-ink">Departures — {year}</h2>
+          {terminations.length > 0 && (
+            <button
+              onClick={() => exportCsv(`jpc-departures-${year}.csv`, terminations.map(t => ({ name: t.employee_name, date: t.termination_date, type: t.termination_type, source: t.source, reason: t.reason || '' })))}
+              className="btn-secondary text-sm"
+            >↓ Export</button>
+          )}
+        </div>
+        {loading ? (
+          <div className="py-10 text-center text-gray-400 text-sm animate-pulse">Loading...</div>
+        ) : terminations.length === 0 ? (
+          <div className="py-10 text-center">
+            <p className="text-gray-400 text-sm">No departures recorded for {year}.</p>
+            <p className="text-gray-400 text-xs mt-1">Use the form above to import historical records.</p>
+          </div>
+        ) : (
+          <table className="w-full text-sm min-w-[520px]">
+            <thead>
+              <tr className="text-xs text-gray-400 uppercase border-b border-gray-100">
+                <th className="text-left py-2 pr-3 font-medium">Date</th>
+                <th className="text-left py-2 px-2 font-medium">Name</th>
+                <th className="text-left py-2 px-2 font-medium">Type</th>
+                <th className="text-left py-2 px-2 font-medium">Source</th>
+                <th className="text-left py-2 px-2 font-medium">Reason</th>
+                <th className="text-right py-2 pl-2 font-medium">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {terminations.map(t => (
+                <tr key={t.id} className="border-b border-gray-50 hover:bg-gray-50/50">
+                  <td className="py-2.5 pr-3 text-gray-500 whitespace-nowrap">{t.termination_date || '—'}</td>
+                  <td className="py-2.5 px-2 font-medium text-ink whitespace-nowrap">{t.employee_name}</td>
+                  <td className="py-2.5 px-2">
+                    <span className={`inline-block text-xs font-medium px-2 py-0.5 rounded-full ${t.termination_type === 'fired' ? 'bg-red-100 text-red-600' : 'bg-amber-100 text-amber-700'}`}>
+                      {t.termination_type === 'fired' ? 'Fired' : 'Quit'}
+                    </span>
+                  </td>
+                  <td className="py-2.5 px-2">
+                    <span className={`inline-block text-xs px-2 py-0.5 rounded-full ${t.source === 'webhook' ? 'bg-blue-50 text-blue-600' : 'bg-gray-100 text-gray-500'}`}>
+                      {t.source === 'webhook' ? '🤖 MC' : '✏️ Manual'}
+                    </span>
+                  </td>
+                  <td className="py-2.5 px-2 text-gray-400 max-w-[160px] truncate" title={t.reason}>{t.reason || '—'}</td>
+                  <td className="py-2.5 pl-2 text-right">
+                    <div className="flex items-center justify-end gap-1">
+                      <button
+                        onClick={() => toggleType(t)}
+                        className="text-xs px-2 py-0.5 rounded bg-gray-100 text-gray-500 hover:bg-gray-200 whitespace-nowrap"
+                        title="Toggle fired ↔ quit"
+                      >
+                        {t.termination_type === 'fired' ? '→ Quit' : '→ Fired'}
+                      </button>
+                      <button
+                        onClick={() => deleteTermination(t)}
+                        className="text-xs px-2 py-0.5 rounded bg-gray-100 text-gray-400 hover:bg-red-50 hover:text-red-500 whitespace-nowrap"
+                      >Del</button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
+  )
+}
+
 export default function Hiring() {
   const [tab, setTab] = useState('pipeline')
   const [year, setYear] = useState(new Date().getFullYear())
@@ -549,7 +800,7 @@ export default function Hiring() {
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold text-ink">Hiring &amp; Staff</h1>
-          <p className="text-sm text-gray-500 mt-0.5">Applicant pipeline and staffing trends · <span className="text-[11px] text-gray-400">🤖 pipeline auto via Woot Recruit · ✏️ hires/fires/call-ins logged via Entry</span></p>
+          <p className="text-sm text-gray-500 mt-0.5">Applicant pipeline, staffing trends &amp; departures · <span className="text-[11px] text-gray-400">🤖 pipeline auto via Woot Recruit · 🤖 terminations auto via MaidCentral · ✏️ hires/fires/call-ins logged via Entry</span></p>
         </div>
       </div>
 
@@ -567,10 +818,17 @@ export default function Hiring() {
         >
           Staffing Trends
         </button>
+        <button
+          onClick={() => setTab('departures')}
+          className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${tab === 'departures' ? 'bg-white text-ink shadow-sm' : 'text-gray-500 hover:text-ink'}`}
+        >
+          Departures
+        </button>
       </div>
 
       {tab === 'pipeline' && <PipelineTab year={year} setYear={setYear} />}
       {tab === 'staffing' && <StaffingTrendsTab year={year} setYear={setYear} />}
+      {tab === 'departures' && <DeparturesTab year={year} setYear={setYear} />}
     </div>
   )
 }

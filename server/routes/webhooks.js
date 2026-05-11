@@ -542,4 +542,41 @@ router.get('/setup-guide', (req, res) => {
   })
 })
 
+// POST /api/webhook/termination  — MaidCentral fires when an employee is terminated
+// Body: { employee_name, employee_id, termination_date, termination_type (fired|quit), reason }
+router.post('/termination', (req, res) => {
+  if (!verifySecret(req, res)) return
+
+  const {
+    employee_name,
+    employee_id,
+    termination_date,
+    termination_type = 'fired',
+    reason,
+    notes,
+  } = req.body
+
+  if (!employee_name) return res.status(400).json({ error: 'employee_name required' })
+
+  const date = termination_date || new Date().toISOString().split('T')[0]
+  const type = ['fired', 'quit'].includes((termination_type || '').toLowerCase())
+    ? termination_type.toLowerCase()
+    : 'fired'
+
+  db.prepare(`
+    INSERT INTO staff_terminations
+      (employee_name, termination_date, termination_type, reason, source, external_id, notes)
+    VALUES (?, ?, ?, ?, 'webhook', ?, ?)
+    ON CONFLICT(external_id) DO UPDATE SET
+      termination_type = excluded.termination_type,
+      termination_date = excluded.termination_date,
+      reason           = excluded.reason
+  `).run(employee_name, date, type, reason ?? null, employee_id ?? null, notes ?? null)
+
+  db.prepare(`INSERT INTO audit_log (action_type, entity, description) VALUES ('webhook','staff_termination',?)`)
+    .run(`MC termination: ${type} — ${employee_name} on ${date}`)
+
+  res.json({ ok: true })
+})
+
 module.exports = router

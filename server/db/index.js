@@ -87,6 +87,20 @@ const migrations = [
   `ALTER TABLE manual_entries ADD COLUMN gift_card_sales REAL`,
   // Store computed annual value on lead records so it's queryable for averages
   `ALTER TABLE lead_records ADD COLUMN annual_value REAL`,
+  // Individual employee termination records (auto via MC webhook + manual import)
+  `CREATE TABLE IF NOT EXISTS staff_terminations (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    employee_name     TEXT NOT NULL,
+    termination_date  TEXT NOT NULL,
+    termination_type  TEXT NOT NULL DEFAULT 'fired',
+    reason            TEXT,
+    source            TEXT DEFAULT 'manual',
+    external_id       TEXT UNIQUE,
+    notes             TEXT,
+    created_at        TEXT DEFAULT (datetime('now'))
+  )`,
+  `INSERT OR IGNORE INTO settings (key, value) VALUES ('staff_headcount_baseline', NULL)`,
+  `INSERT OR IGNORE INTO settings (key, value) VALUES ('staff_headcount_baseline_date', NULL)`,
 ]
 for (const sql of migrations) {
   try { db.exec(sql) } catch (_) { /* column already exists — safe to ignore */ }

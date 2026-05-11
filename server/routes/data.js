@@ -118,6 +118,34 @@ router.get('/summary', (req, res) => {
     FROM manual_entries WHERE entry_date BETWEEN ? AND ?
   `).get(monthStart, monthEnd)
 
+  // If staff_terminations has records for this month, use them for quit/fired (more accurate)
+  const termCountsMonth = db.prepare(`
+    SELECT
+      COUNT(CASE WHEN termination_type = 'quit'  THEN 1 END) AS quit,
+      COUNT(CASE WHEN termination_type = 'fired' THEN 1 END) AS fired,
+      COUNT(*) AS total
+    FROM staff_terminations WHERE SUBSTR(termination_date,1,7) = ?
+  `).get(month)
+  const usingTerminationRecords = termCountsMonth.total > 0
+  if (usingTerminationRecords) {
+    staffChanges.quit  = termCountsMonth.quit
+    staffChanges.fired = termCountsMonth.fired
+  }
+
+  // Estimated current headcount from baseline + hires − departures
+  const headcountBaseline     = parseInt(cfg.staff_headcount_baseline) || null
+  const headcountBaselineDate = cfg.staff_headcount_baseline_date || null
+  let estimatedCurrentHeadcount = null
+  if (headcountBaseline !== null && headcountBaselineDate) {
+    const hiresAfter = db.prepare(
+      `SELECT COALESCE(SUM(new_hires),0) AS n FROM manual_entries WHERE entry_date > ?`
+    ).get(headcountBaselineDate).n
+    const termsAfter = db.prepare(
+      `SELECT COUNT(*) AS n FROM staff_terminations WHERE termination_date > ?`
+    ).get(headcountBaselineDate).n
+    estimatedCurrentHeadcount = headcountBaseline + hiresAfter - termsAfter
+  }
+
   const lastEntry = db.prepare(
     'SELECT entry_date FROM manual_entries ORDER BY entry_date DESC, id DESC LIMIT 1'
   ).get()
@@ -147,6 +175,8 @@ router.get('/summary', (req, res) => {
     complaints: ms?.complaints ?? 0,
     marketing_spend: marketingSpend,
     staff: staffChanges,
+    staff_using_termination_records: usingTerminationRecords,
+    estimated_current_headcount: estimatedCurrentHeadcount,
     gift_card_sales_mtd: staffChanges.gift_card_sales || 0,
     last_entry_date: lastEntry?.entry_date || null,
     settings: cfg,
@@ -422,7 +452,18 @@ router.get('/economics', (req, res) => {
     ? ytdSales.revenue / ytdSales.months_with_data / avgRGE
     : null
 
-  const totalTurnover = manualYTD.quit + manualYTD.fired
+  // Use staff_terminations for quit/fired YTD when records exist (same logic as /hiring endpoint)
+  const termYTD = db.prepare(`
+    SELECT
+      COUNT(CASE WHEN termination_type = 'quit'  THEN 1 END) AS quit,
+      COUNT(CASE WHEN termination_type = 'fired' THEN 1 END) AS fired,
+      COUNT(*) AS total
+    FROM staff_terminations WHERE SUBSTR(termination_date,1,4) = ?
+  `).get(String(year))
+  const ytdQuit  = termYTD.total > 0 ? termYTD.quit  : manualYTD.quit
+  const ytdFired = termYTD.total > 0 ? termYTD.fired : manualYTD.fired
+
+  const totalTurnover = ytdQuit + ytdFired
   const turnoverCostTotal = costOfTurnover ? costOfTurnover * totalTurnover : null
 
   res.json({
@@ -436,8 +477,8 @@ router.get('/economics', (req, res) => {
       leads_closed: ytdLeadsClosed,
       cancellations: ytdSales.cancellations,
       new_hires: manualYTD.new_hires,
-      quit: manualYTD.quit,
-      fired: manualYTD.fired,
+      quit: ytdQuit,
+      fired: ytdFired,
       call_ins: manualYTD.call_ins,
       months_with_data: ytdSales.months_with_data,
     },

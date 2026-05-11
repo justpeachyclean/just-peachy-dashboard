@@ -265,12 +265,40 @@ export default function Overview() {
       <div className="card mb-5">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-sm font-semibold text-gray-700">Staff Activity (MTD)</h2>
-          <span className="text-[10px] text-gray-400 italic">✏️ manual · logged via Entry page</span>
+          <span className="text-[10px] text-gray-400 italic">
+            {summary.staff_using_termination_records
+              ? '🤖 quit/fired auto via MaidCentral · ✏️ hires & call-ins via Entry'
+              : '✏️ manual · logged via Entry page'}
+          </span>
         </div>
+
+        {/* Estimated headcount banner */}
+        {summary.estimated_current_headcount != null && (
+          <div className="flex items-center gap-3 bg-gray-50 rounded-xl px-4 py-3 mb-4">
+            <div className="text-center">
+              <p className="text-2xl font-bold text-ink">{summary.estimated_current_headcount}</p>
+              <p className="text-xs text-gray-500 mt-0.5">est. current employees</p>
+            </div>
+            <div className="text-xs text-gray-400 leading-relaxed">
+              Baseline: {summary.settings?.staff_headcount_baseline} as of {summary.settings?.staff_headcount_baseline_date}<br />
+              +{summary.staff.new_hires} hires this month · −{summary.staff.quit + summary.staff.fired} departures this month<br />
+              <Link to="/hiring" className="text-sage underline">Update in Hiring → Departures</Link>
+            </div>
+          </div>
+        )}
+
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-center">
           <div><p className="text-2xl font-bold text-ok">{summary.staff.new_hires}</p><p className="text-xs text-gray-500 mt-1">New Hires</p></div>
-          <div><p className="text-2xl font-bold text-warn">{summary.staff.quit}</p><p className="text-xs text-gray-500 mt-1">Quit</p></div>
-          <div><p className="text-2xl font-bold text-danger">{summary.staff.fired}</p><p className="text-xs text-gray-500 mt-1">Fired</p></div>
+          <div>
+            <p className="text-2xl font-bold text-warn">{summary.staff.quit}</p>
+            <p className="text-xs text-gray-500 mt-1">Quit</p>
+            {summary.staff_using_termination_records && <p className="text-[9px] text-blue-400 mt-0.5">🤖 MC</p>}
+          </div>
+          <div>
+            <p className="text-2xl font-bold text-danger">{summary.staff.fired}</p>
+            <p className="text-xs text-gray-500 mt-1">Fired</p>
+            {summary.staff_using_termination_records && <p className="text-[9px] text-blue-400 mt-0.5">🤖 MC</p>}
+          </div>
           <div><p className="text-2xl font-bold text-ink">{summary.staff.call_ins}</p><p className="text-xs text-gray-500 mt-1">Call-ins</p></div>
         </div>
       </div>

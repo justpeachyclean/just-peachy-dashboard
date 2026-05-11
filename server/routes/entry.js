@@ -13,6 +13,8 @@ router.post('/', (req, res) => {
     absences = 0,
     revenue_generating_employees,
     marketing_spend,
+    skips = 0,
+    client_count,     // snapshot of current recurring client count
     notes,
     entered_by = 'manager',
   } = req.body
@@ -22,8 +24,8 @@ router.post('/', (req, res) => {
   const insert = db.prepare(`
     INSERT INTO manual_entries
       (entry_date, new_hires, staff_quit, staff_fired, call_ins, absences,
-       revenue_generating_employees, marketing_spend, notes, entered_by)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       revenue_generating_employees, marketing_spend, skips, client_count, notes, entered_by)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(entry_date, entered_by) DO UPDATE SET
       new_hires = excluded.new_hires,
       staff_quit = excluded.staff_quit,
@@ -32,6 +34,8 @@ router.post('/', (req, res) => {
       absences = excluded.absences,
       revenue_generating_employees = excluded.revenue_generating_employees,
       marketing_spend = excluded.marketing_spend,
+      skips = excluded.skips,
+      client_count = excluded.client_count,
       notes = excluded.notes
   `)
 
@@ -44,9 +48,23 @@ router.post('/', (req, res) => {
     absences,
     revenue_generating_employees ?? null,
     marketing_spend ?? null,
+    skips || 0,
+    client_count ?? null,
     notes ?? null,
     entered_by
   )
+
+  // If a client count snapshot was provided, update monthly_sales for that month
+  if (client_count != null) {
+    const month = entry_date.slice(0, 7)
+    db.prepare(`
+      INSERT INTO monthly_sales (month, recurring_clients)
+      VALUES (?, ?)
+      ON CONFLICT(month) DO UPDATE SET recurring_clients = excluded.recurring_clients
+    `).run(month, parseInt(client_count))
+    // Also keep the settings snapshot for the live Overview count
+    db.prepare(`UPDATE settings SET value = ? WHERE key = 'recurring_clients_current'`).run(String(client_count))
+  }
 
   db.prepare(
     `INSERT INTO audit_log (action_type, entity, description) VALUES ('create', 'manual_entry', ?)`

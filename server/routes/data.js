@@ -70,13 +70,14 @@ router.get('/summary', (req, res) => {
   const marketingSpend = qbMarketing.total > 0 ? qbMarketing.total
     : ms?.marketing_spend ?? manualMarketing.total
 
-  // Staff
+  // Staff + daily skips
   const staffChanges = db.prepare(`
     SELECT
       COALESCE(SUM(new_hires), 0) AS new_hires,
       COALESCE(SUM(staff_quit), 0) AS quit,
       COALESCE(SUM(staff_fired), 0) AS fired,
-      COALESCE(SUM(call_ins), 0) AS call_ins
+      COALESCE(SUM(call_ins), 0) AS call_ins,
+      COALESCE(SUM(skips), 0) AS skips_sum
     FROM manual_entries WHERE entry_date BETWEEN ? AND ?
   `).get(monthStart, monthEnd)
 
@@ -101,10 +102,10 @@ router.get('/summary', (req, res) => {
     quote_to_sale_rate: leadsQuoted > 0 ? leadsClosed / leadsQuoted : null,
     initial_cleans_booked: initialCleansBooked,
     initial_to_recurring: initialToRecurring,
-    initial_to_recurring_rate: initialCleansBooked > 0 ? initialToRecurring / initialCleansBooked : null,
+    initial_to_recurring_rate: leadsClosed > 0 ? initialToRecurring / leadsClosed : null,
     initial_cleans: ms?.initial_cleans ?? 0,
     retained: ms?.retained ?? 0,
-    skips: ms?.skips ?? 0,
+    skips: ms?.skips > 0 ? ms.skips : staffChanges.skips_sum,
     complaints: ms?.complaints ?? 0,
     marketing_spend: marketingSpend,
     staff: staffChanges,
@@ -203,7 +204,7 @@ router.get('/monthly', (req, res) => {
       quote_to_sale_rate: mLeadsQuoted > 0 ? mLeadsClosed / mLeadsQuoted : null,
       initial_cleans_booked: mInitialCleansBooked,
       initial_to_recurring: mInitialToRecurring,
-      initial_to_recurring_rate: mInitialCleansBooked > 0 ? mInitialToRecurring / mInitialCleansBooked : null,
+      initial_to_recurring_rate: mLeadsClosed > 0 ? mInitialToRecurring / mLeadsClosed : null,
       initial_cleans: ms?.initial_cleans ?? 0,
       move_out_cleans: ms?.move_out_cleans ?? 0,
       retained: ms?.retained ?? 0,

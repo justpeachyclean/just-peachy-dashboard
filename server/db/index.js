@@ -80,6 +80,9 @@ const migrations = [
   created_at     TEXT DEFAULT (datetime('now')),
   updated_at     TEXT DEFAULT (datetime('now'))
 )`,
+  // Skips logged per day; client_count is a point-in-time snapshot (optional)
+  `ALTER TABLE manual_entries ADD COLUMN skips INTEGER DEFAULT 0`,
+  `ALTER TABLE manual_entries ADD COLUMN client_count INTEGER`,
 ]
 for (const sql of migrations) {
   try { db.exec(sql) } catch (_) { /* column already exists — safe to ignore */ }

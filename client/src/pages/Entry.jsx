@@ -13,6 +13,8 @@ const INITIAL = {
   absences: '',
   revenue_generating_employees: '',
   marketing_spend: '',
+  skips: '',
+  client_count: '',
   notes: '',
   entered_by: 'manager',
 }
@@ -38,6 +40,8 @@ export default function Entry() {
       absences: parseInt(form.absences) || 0,
       revenue_generating_employees: form.revenue_generating_employees !== '' ? parseInt(form.revenue_generating_employees) : null,
       marketing_spend: form.marketing_spend !== '' ? parseFloat(form.marketing_spend) : null,
+      skips: parseInt(form.skips) || 0,
+      client_count: form.client_count !== '' ? parseInt(form.client_count) : null,
       notes: form.notes || null,
       entered_by: form.entered_by,
     }
@@ -99,6 +103,8 @@ export default function Entry() {
                     <th className="text-right pb-2">Absences</th>
                     <th className="text-right pb-2">RGE</th>
                     <th className="text-right pb-2">Mktg $</th>
+                    <th className="text-right pb-2">Skips</th>
+                    <th className="text-right pb-2">Clients</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -112,6 +118,8 @@ export default function Entry() {
                       <td className="text-right">{e.absences ?? 0}</td>
                       <td className="text-right">{e.revenue_generating_employees ?? '—'}</td>
                       <td className="text-right">{e.marketing_spend != null ? `$${Number(e.marketing_spend).toLocaleString()}` : '—'}</td>
+                      <td className="text-right">{e.skips ?? 0}</td>
+                      <td className="text-right">{e.client_count ?? '—'}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -236,6 +244,37 @@ export default function Entry() {
               />
             </div>
             <p className="text-xs text-gray-400 mt-1">Only enter if not already in QuickBooks</p>
+          </div>
+        </div>
+
+        {/* Client snapshot */}
+        <div>
+          <h3 className="text-sm font-semibold text-gray-700 mb-3 pb-2 border-b">Client Snapshot</h3>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="form-label">Current Client Count</label>
+              <input
+                type="number"
+                min="0"
+                className="form-input"
+                placeholder="e.g. 78"
+                value={form.client_count}
+                onChange={e => set('client_count', e.target.value)}
+              />
+              <p className="text-xs text-gray-400 mt-1">Updates Overview's recurring client total</p>
+            </div>
+            <div>
+              <label className="form-label">Skips Today</label>
+              <input
+                type="number"
+                min="0"
+                className="form-input"
+                placeholder="0"
+                value={form.skips}
+                onChange={e => set('skips', e.target.value)}
+              />
+              <p className="text-xs text-gray-400 mt-1">Adds to monthly skip count on Overview</p>
+            </div>
           </div>
         </div>
 

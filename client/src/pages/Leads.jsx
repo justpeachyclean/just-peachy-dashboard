@@ -161,26 +161,48 @@ export default function Leads() {
     month: String(new Date().getMonth() + 1).padStart(2, '0'),
     converted: 'all',
   })
+  const [searchInput, setSearchInput] = useState('')
   const [search, setSearch] = useState('')
   const [showForm, setShowForm] = useState(false)
   const [editId, setEditId] = useState(null)
   const [form, setForm] = useState(BLANK_FORM)
   const [saving, setSaving] = useState(false)
 
+  // Debounce search input → search state (300ms)
+  useEffect(() => {
+    const t = setTimeout(() => setSearch(searchInput), 300)
+    return () => clearTimeout(t)
+  }, [searchInput])
+
   const load = () => {
-    const params = new URLSearchParams({ year: filter.year, limit: 2000 })
-    if (filter.month) params.set('month', `${filter.year}-${filter.month}`)
+    const params = new URLSearchParams({ limit: 2000 })
+    // When searching, drop the month filter so we search all records
+    if (search.trim()) {
+      // no month/year filter — load everything
+    } else if (filter.month) {
+      params.set('month', `${filter.year}-${filter.month}`)
+    } else {
+      params.set('year', filter.year)
+    }
     apiFetch(`/api/leads?${params}`)
       .then(r => r.json())
-      .then(data => {
-        setLeads(data)
-      })
+      .then(setLeads)
   }
 
-  useEffect(() => { load() }, [filter.year, filter.month])
+  useEffect(() => { load() }, [filter.year, filter.month, search])
 
   const f = v => (v ?? '').toString()
-  const set = k => e => setForm(p => ({ ...p, [k]: e.target.type === 'checkbox' ? e.target.checked : e.target.value }))
+  const set = k => e => {
+    const val = e.target.type === 'checkbox' ? e.target.checked : e.target.value
+    setForm(p => {
+      const next = { ...p, [k]: val }
+      // Auto-check initial_clean_booked when recurring_retained is checked
+      if (k === 'recurring_retained' && val) next.initial_clean_booked = true
+      // Auto-check converted when either booking or recurring is checked
+      if ((k === 'initial_clean_booked' || k === 'recurring_retained') && val) next.converted = true
+      return next
+    })
+  }
 
   const openEdit = r => {
     setEditId(r.id)
@@ -252,14 +274,14 @@ export default function Leads() {
   const recurring      = converted.filter(r => r.recurring_retained)
   const quoted         = leads.filter(r => r.price_per_clean != null || r.quote_amount != null || r.initial_clean_price != null)
   const initialBooked  = leads.filter(r => r.initial_clean_booked)
-  const initialRecurring = initialBooked.filter(r => r.recurring_retained)
 
   const totalAnnual    = recurring.reduce((s, r) => s + (r.annual_value || 0), 0)
 
-  // Funnel rates
-  const leadToQuoteRate     = leads.length > 0   ? quoted.length / leads.length           : null
-  const quoteToSaleRate     = quoted.length > 0  ? converted.length / quoted.length       : null
-  const initialToRecurringRate = initialBooked.length > 0 ? initialRecurring.length / initialBooked.length : null
+  // Funnel rates — Initial→Recurring uses converted as denominator
+  // (checking Recurring Retained auto-checks Initial Clean Booked, so they're equivalent)
+  const leadToQuoteRate        = leads.length > 0     ? quoted.length / leads.length       : null
+  const quoteToSaleRate        = quoted.length > 0    ? converted.length / quoted.length   : null
+  const initialToRecurringRate = converted.length > 0 ? recurring.length / converted.length : null
 
   const monthLabel = filter.month
     ? `${MONTH_NAMES[parseInt(filter.month) - 1]} ${filter.year}`
@@ -304,8 +326,8 @@ export default function Leads() {
         <div className="kpi-card border-brand">
           <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Recurring Retained</p>
           <p className="text-3xl font-bold text-brand mt-2">{recurring.length}</p>
-          {initialBooked.length > 0 && (
-            <p className="text-xs text-gray-400 mt-1">{initialRecurring.length}/{initialBooked.length} initial→recurring</p>
+          {converted.length > 0 && (
+            <p className="text-xs text-gray-400 mt-1">{recurring.length}/{converted.length} converted→recurring</p>
           )}
         </div>
         <div className="kpi-card border-peach">
@@ -337,9 +359,9 @@ export default function Leads() {
           />
           <div className="flex items-center text-gray-300 text-lg font-light self-center">›</div>
           <FunnelStage
-            label="Initial → Recurring"
-            from={initialBooked.length}
-            to={initialRecurring.length}
+            label="Converted → Recurring"
+            from={converted.length}
+            to={recurring.length}
             rate={initialToRecurringRate}
             goal={0.35}
             stretch={0.45}
@@ -363,15 +385,18 @@ export default function Leads() {
         </select>
         <input
           type="text"
-          className="form-input text-sm w-48"
-          placeholder="🔍 Search client name…"
-          value={search}
-          onChange={e => setSearch(e.target.value)}
+          className="form-input text-sm w-52"
+          placeholder="🔍 Search all records…"
+          value={searchInput}
+          onChange={e => setSearchInput(e.target.value)}
         />
-        {search && (
-          <button onClick={() => setSearch('')} className="text-xs text-gray-400 hover:text-gray-600">✕ Clear</button>
+        {searchInput && (
+          <button onClick={() => { setSearchInput(''); setSearch('') }} className="text-xs text-gray-400 hover:text-gray-600">✕ Clear</button>
         )}
-        <span className="text-sm text-gray-400">{visible.length} records</span>
+        {search.trim()
+          ? <span className="text-xs text-brand font-medium bg-brand/10 px-2 py-1 rounded-full">Searching all months · {visible.length} found</span>
+          : <span className="text-sm text-gray-400">{visible.length} records</span>
+        }
       </div>
 
       {/* Table */}

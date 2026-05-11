@@ -85,6 +85,8 @@ const migrations = [
   `ALTER TABLE manual_entries ADD COLUMN client_count INTEGER`,
   // Gift card sales — manual entry or Gift Up Zapier webhook
   `ALTER TABLE manual_entries ADD COLUMN gift_card_sales REAL`,
+  // Store computed annual value on lead records so it's queryable for averages
+  `ALTER TABLE lead_records ADD COLUMN annual_value REAL`,
 ]
 for (const sql of migrations) {
   try { db.exec(sql) } catch (_) { /* column already exists — safe to ignore */ }

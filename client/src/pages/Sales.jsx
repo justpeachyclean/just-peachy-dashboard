@@ -34,6 +34,7 @@ function monthLabel(m) {
 
 export default function Sales() {
   const [rows, setRows] = useState([])
+  const [valueAvgs, setValueAvgs] = useState(null)
   const [error, setError] = useState(null)
   const [showForm, setShowForm] = useState(false)
   const [formMonth, setFormMonth] = useState('')
@@ -47,7 +48,14 @@ export default function Sales() {
       .then(setRows)
       .catch(setError)
 
-  useEffect(() => { load() }, [])
+  useEffect(() => {
+    load()
+    const year = new Date().getFullYear()
+    apiFetch(`/api/data/value-avgs?year=${year}`)
+      .then(r => r.json())
+      .then(setValueAvgs)
+      .catch(() => {})
+  }, [])
 
   const openForm = (month = '') => {
     if (month) {
@@ -112,13 +120,19 @@ export default function Sales() {
   const ytdCloseRate = totalQuoted > 0 ? totalClosed / totalQuoted : null
   const ytdRetentionRate = totalInitial > 0 ? totalRetained / totalInitial : null
 
-  // Annualized value per client from average monthly revenue per recurring client
+  // Annualized value: prefer real per-record averages, fall back to revenue ÷ clients
   const avgMonthlyRevPerClient = (() => {
     const withBoth = ytdRows.filter(r => r.revenue > 0 && r.recurring_clients > 0)
     if (!withBoth.length) return null
     return withBoth.reduce((s, r) => s + r.revenue / r.recurring_clients, 0) / withBoth.length
   })()
-  const annualValuePerClient = avgMonthlyRevPerClient ? avgMonthlyRevPerClient * 12 : null
+  const fallbackAnnual = avgMonthlyRevPerClient ? avgMonthlyRevPerClient * 12 : null
+
+  const valueGained = valueAvgs?.avg_value_gained ?? fallbackAnnual
+  const valueLost   = valueAvgs?.avg_value_lost   ?? fallbackAnnual
+  const gainedIsReal = !!valueAvgs?.avg_value_gained
+  const lostIsReal   = !!valueAvgs?.avg_value_lost
+  const annualValuePerClient = fallbackAnnual // keep for YTD impact calc
 
   if (error) return (
     <div className="card text-center py-12">
@@ -172,20 +186,28 @@ export default function Sales() {
       </div>
 
       {/* Annualized value cards */}
-      {annualValuePerClient && (
+      {(valueGained || valueLost) && (
         <div className="grid grid-cols-2 gap-4 mb-6">
           <div className="card" style={{ background: 'rgb(34 197 94 / 0.05)', border: '1px solid rgb(34 197 94 / 0.2)' }}>
             <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Value Gained / New Recurring</p>
-            <p className="text-2xl font-bold text-ok">{fmt$(annualValuePerClient)}<span className="text-sm font-normal text-gray-400"> /yr</span></p>
-            <p className="text-xs text-gray-400 mt-1">Annualized revenue per new recurring client</p>
+            <p className="text-2xl font-bold text-ok">{fmt$(valueGained)}<span className="text-sm font-normal text-gray-400"> /yr</span></p>
+            <p className="text-xs text-gray-400 mt-1">
+              {gainedIsReal
+                ? `Avg from ${valueAvgs.avg_value_gained_count} real client price${valueAvgs.avg_value_gained_count !== 1 ? 's' : ''} this year`
+                : 'Est. from avg monthly revenue ÷ active clients'}
+            </p>
+            {!gainedIsReal && <p className="text-[10px] text-gray-400 mt-1 italic">Add frequency to GHL Zap to get real per-client figures →</p>}
           </div>
           <div className="card" style={{ background: 'rgb(239 68 68 / 0.05)', border: '1px solid rgb(239 68 68 / 0.2)' }}>
             <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Value Lost / Cancellation</p>
-            <p className="text-2xl font-bold text-danger">({fmt$(annualValuePerClient)}<span className="text-sm font-normal text-gray-400"> /yr)</span></p>
+            <p className="text-2xl font-bold text-danger">({fmt$(valueLost)}<span className="text-sm font-normal text-gray-400"> /yr)</span></p>
             <p className="text-xs text-gray-400 mt-1">
-              YTD cancellation impact: {fmt$(totalCancellations * annualValuePerClient)}
+              {lostIsReal
+                ? `Avg from ${valueAvgs.avg_value_lost_count} real cancellation price${valueAvgs.avg_value_lost_count !== 1 ? 's' : ''} this year`
+                : `YTD cancellation impact: ${fmt$(totalCancellations * (valueLost || 0))}`}
             </p>
-            <p className="text-[10px] text-gray-300 mt-1 italic">Same avg as Value Gained — both use revenue ÷ active clients. To get per-client figures, log price on each cancellation record.</p>
+            {lostIsReal && <p className="text-xs text-gray-400 mt-0.5">YTD impact: {fmt$(totalCancellations * valueLost)}</p>}
+            {!lostIsReal && <p className="text-[10px] text-gray-400 mt-1 italic">Log price + frequency on cancellation records to get real figures →</p>}
           </div>
         </div>
       )}

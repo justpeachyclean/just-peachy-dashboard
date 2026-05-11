@@ -153,6 +153,44 @@ router.get('/summary', (req, res) => {
   })
 })
 
+// GET /api/data/value-avgs?year=YYYY
+// Returns actual per-record annual value averages from lead_records and cancelled_clients.
+// Used by the Sales page to show real Value Gained / Value Lost when price+frequency data exists.
+router.get('/value-avgs', (req, res) => {
+  const year = req.query.year || new Date().getFullYear()
+  const yearStr = String(year)
+
+  // Average annual value from converted recurring leads with stored price × frequency
+  const gained = db.prepare(`
+    SELECT
+      AVG(annual_value) AS avg_annual,
+      COUNT(*) AS n
+    FROM lead_records
+    WHERE converted = 1
+      AND annual_value > 0
+      AND LOWER(TRIM(COALESCE(frequency,''))) NOT IN ('one_type','one-time','one time','')
+      AND month LIKE ?
+  `).get(`${yearStr}-%`)
+
+  // Average annual value lost from cancellations with stored annual_value_lost
+  const lost = db.prepare(`
+    SELECT
+      AVG(annual_value_lost) AS avg_annual,
+      COUNT(*) AS n
+    FROM cancelled_clients
+    WHERE annual_value_lost > 0
+      AND SUBSTR(cancel_date, 1, 4) = ?
+  `).get(yearStr)
+
+  res.json({
+    year: yearStr,
+    avg_value_gained: gained?.avg_annual ?? null,
+    avg_value_gained_count: gained?.n ?? 0,
+    avg_value_lost: lost?.avg_annual ?? null,
+    avg_value_lost_count: lost?.n ?? 0,
+  })
+})
+
 // GET /api/data/monthly?year=2026  — 12-month rollup for charts
 router.get('/monthly', (req, res) => {
   const year = req.query.year || new Date().getFullYear()

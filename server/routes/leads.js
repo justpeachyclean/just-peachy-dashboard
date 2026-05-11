@@ -165,12 +165,19 @@ router.post('/', (req, res) => {
 
   const month = record_date.slice(0, 7)
 
+  // Compute annual_value from price + frequency if possible
+  const ANNUAL_VISITS_MAP = { weekly:52, biweekly:26, 'bi-weekly':26, 'tri-weekly':17, 'every 4 weeks':13, monthly:13 }
+  const freqKey = (frequency || '').toLowerCase().trim()
+  const visitsAnnual = ANNUAL_VISITS_MAP[freqKey] || null
+  const priceToUse = price_per_clean ?? quote_amount ?? initial_clean_price ?? null
+  const annualVal = (visitsAnnual && priceToUse) ? Math.round(parseFloat(priceToUse) * visitsAnnual) : null
+
   db.prepare(`
     INSERT INTO lead_records
       (record_date, client_name, frequency, price_per_clean, quote_amount, initial_clean_price,
        converted, recurring_retained, initial_clean_booked, lead_source, used_before, reason,
-       rep_name, month, source, external_id, notes)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+       rep_name, month, source, external_id, notes, annual_value)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     ON CONFLICT(external_id) DO UPDATE SET
       record_date           = excluded.record_date,
       client_name           = excluded.client_name,
@@ -187,13 +194,15 @@ router.post('/', (req, res) => {
       rep_name              = excluded.rep_name,
       month                 = excluded.month,
       source                = excluded.source,
-      notes                 = excluded.notes
+      notes                 = excluded.notes,
+      annual_value          = COALESCE(excluded.annual_value, annual_value)
   `).run(
     record_date, client_name ?? null, frequency ?? null,
     price_per_clean ?? null, quote_amount ?? null, initial_clean_price ?? null,
     converted ? 1 : 0, recurring_retained ? 1 : 0, initial_clean_booked ? 1 : 0,
     lead_source ?? null, used_before ?? null, reason ?? null,
-    rep_name ?? null, month, source, external_id ?? null, notes ?? null
+    rep_name ?? null, month, source, external_id ?? null, notes ?? null,
+    annualVal
   )
 
   audit(req, 'lead_added', `${client_name || 'Unknown'}`)

@@ -19,6 +19,18 @@ function verifySecret(req, res) {
   return true
 }
 
+// Shared frequency → annual visits multiplier
+const ANNUAL_VISITS = {
+  weekly: 52, biweekly: 26, 'bi-weekly': 26,
+  'tri-weekly': 17, 'every 4 weeks': 13, monthly: 13,
+}
+
+function calcAnnualFromPrice(price, freq) {
+  if (!price || !freq) return null
+  const mult = ANNUAL_VISITS[freq.toLowerCase().trim()]
+  return mult ? Math.round(parseFloat(price) * mult) : null
+}
+
 // POST /api/webhook/ghl
 router.post('/ghl', (req, res) => {
   if (!verifySecret(req, res)) return
@@ -119,6 +131,12 @@ router.post('/ghl', (req, res) => {
           recurring_retained = CASE WHEN LOWER(COALESCE(frequency,'')) NOT IN ('one_type','one-time','one time','') THEN 1 ELSE 0 END
         WHERE external_id = ?
       `).run(extId)
+      // Compute and store annual_value now that we have price + frequency
+      const lead = db.prepare('SELECT price_per_clean, frequency FROM lead_records WHERE external_id = ?').get(extId)
+      if (lead) {
+        const av = calcAnnualFromPrice(lead.price_per_clean, lead.frequency)
+        if (av) db.prepare('UPDATE lead_records SET annual_value = ? WHERE external_id = ?').run(av, extId)
+      }
     } else if (clientName) {
       // Fallback: match by name if no external_id
       db.prepare(`
@@ -126,6 +144,11 @@ router.post('/ghl', (req, res) => {
           recurring_retained = CASE WHEN LOWER(COALESCE(frequency,'')) NOT IN ('one_type','one-time','one time','') THEN 1 ELSE 0 END
         WHERE id = (SELECT id FROM lead_records WHERE LOWER(client_name) = LOWER(?) ORDER BY record_date DESC LIMIT 1)
       `).run(clientName)
+      const lead = db.prepare(`SELECT id, price_per_clean, frequency FROM lead_records WHERE LOWER(client_name) = LOWER(?) ORDER BY record_date DESC LIMIT 1`).get(clientName)
+      if (lead) {
+        const av = calcAnnualFromPrice(lead.price_per_clean, lead.frequency)
+        if (av) db.prepare('UPDATE lead_records SET annual_value = ? WHERE id = ?').run(av, lead.id)
+      }
     }
 
   } else if (LOST_TYPES.includes(event_type)) {
@@ -198,17 +221,23 @@ router.post('/cancellation', (req, res) => {
     client_id, client_name, cancel_date, reason_code,
     client_quote, save_attempted, save_outcome, solution_offered,
     frequency, recurring_months, revenue_lost_monthly,
+    price_per_visit,  // optional — auto-calculates annual_value_lost if provided
   } = payload
 
   const date = cancel_date || new Date().toISOString().split('T')[0]
   const { label, category } = resolveCode(reason_code)
 
+  // Auto-calculate annual_value_lost: prefer price × freq, fall back to monthly × 12
+  const annualFromPpv = calcAnnualFromPrice(price_per_visit, frequency)
+  const annualFromMonthly = revenue_lost_monthly ? Math.round(parseFloat(revenue_lost_monthly) * 12) : null
+  const annualValueLost = annualFromPpv ?? annualFromMonthly ?? null
+
   const result = db.prepare(`
     INSERT INTO cancelled_clients
       (client_id, client_name, cancel_date, reason_code, reason_label, reason_category,
        client_quote, save_attempted, save_outcome, solution_offered,
-       frequency, recurring_months, revenue_lost_monthly, source, raw_payload)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,'webhook',?)
+       frequency, recurring_months, revenue_lost_monthly, price_per_visit, annual_value_lost, source, raw_payload)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'webhook',?)
   `).run(
     client_id ?? null, client_name ?? null, date,
     reason_code ?? null, label, category,
@@ -218,6 +247,8 @@ router.post('/cancellation', (req, res) => {
     frequency ?? null,
     recurring_months ? parseInt(recurring_months) : null,
     revenue_lost_monthly ? parseFloat(revenue_lost_monthly) : null,
+    price_per_visit ? parseFloat(price_per_visit) : null,
+    annualValueLost,
     JSON.stringify(payload)
   )
 

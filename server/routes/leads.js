@@ -95,7 +95,7 @@ function createCareTimeline(clientName, frequency, startDate) {
 function calcAnnualValue(initialPrice, recurringPrice, frequency, fallbackPrice, cfg) {
   if (!frequency) return null
   const f = frequency.toLowerCase().trim()
-  const isOneTime = ['one_time','one time','one-time'].includes(f)
+  const isOneTime = ['one_type','one time','one-time','priority','move out','ttb','general'].includes(f)
 
   if (isOneTime) {
     const p = initialPrice ?? fallbackPrice
@@ -136,7 +136,7 @@ router.get('/', (req, res) => {
   const enriched = rows.map(r => {
     const visits = visitsPerYear(r.frequency)
     const f = (r.frequency || '').toLowerCase().trim()
-    const isOneTime = ['one_time','one time','one-time'].includes(f)
+    const isOneTime = ['one_type','one time','one-time','priority','move out','ttb','general'].includes(f)
     const fallback = isOneTime ? cfg.avg_onetime_price : cfg.avg_recurring_price
     const annual_value = calcAnnualValue(r.initial_clean_price, r.price_per_clean, r.frequency, r.quote_amount, cfg)
       ?? (visits && fallback ? Math.round(visits * fallback) : null)

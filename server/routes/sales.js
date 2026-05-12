@@ -23,19 +23,19 @@ router.post('/', (req, res) => {
   const {
     month,
     rep_name,
-    leads_in = 0,
-    leads_quoted = 0,
-    leads_closed = 0,
-    recurring_closed = 0,
-    initial_cleans = 0,
-    retained = 0,
-    cancellations = 0,
-    skips = 0,
-    complaints = 0,
-    revenue = 0,
+    leads_in,
+    leads_quoted,
+    leads_closed,
+    recurring_closed,
+    initial_cleans,
+    retained,
+    cancellations,
+    skips,
+    complaints,
+    revenue,
     marketing_spend,
     recurring_clients,
-    move_out_cleans = 0,
+    move_out_cleans,
     notes,
   } = req.body
 
@@ -50,26 +50,27 @@ router.post('/', (req, res) => {
        revenue, marketing_spend, recurring_clients, move_out_cleans, notes, updated_at)
     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,datetime('now'))
     ON CONFLICT(month) DO UPDATE SET
-      rep_name          = excluded.rep_name,
-      leads_in          = excluded.leads_in,
-      leads_quoted      = excluded.leads_quoted,
-      leads_closed      = excluded.leads_closed,
-      recurring_closed  = excluded.recurring_closed,
-      initial_cleans    = excluded.initial_cleans,
-      retained          = excluded.retained,
-      cancellations     = excluded.cancellations,
-      skips             = excluded.skips,
-      complaints        = excluded.complaints,
-      revenue           = excluded.revenue,
-      marketing_spend   = excluded.marketing_spend,
-      recurring_clients = excluded.recurring_clients,
-      move_out_cleans   = excluded.move_out_cleans,
-      notes             = excluded.notes,
+      rep_name          = COALESCE(excluded.rep_name,          rep_name),
+      leads_in          = COALESCE(excluded.leads_in,          leads_in),
+      leads_quoted      = COALESCE(excluded.leads_quoted,      leads_quoted),
+      leads_closed      = COALESCE(excluded.leads_closed,      leads_closed),
+      recurring_closed  = COALESCE(excluded.recurring_closed,  recurring_closed),
+      initial_cleans    = COALESCE(excluded.initial_cleans,    initial_cleans),
+      retained          = COALESCE(excluded.retained,          retained),
+      cancellations     = COALESCE(excluded.cancellations,     cancellations),
+      skips             = COALESCE(excluded.skips,             skips),
+      complaints        = COALESCE(excluded.complaints,        complaints),
+      revenue           = COALESCE(excluded.revenue,           revenue),
+      marketing_spend   = COALESCE(excluded.marketing_spend,   marketing_spend),
+      recurring_clients = COALESCE(excluded.recurring_clients, recurring_clients),
+      move_out_cleans   = COALESCE(excluded.move_out_cleans,   move_out_cleans),
+      notes             = COALESCE(excluded.notes,             notes),
       updated_at        = datetime('now')
   `).run(
-    month, rep_name ?? null, leads_in, leads_quoted, leads_closed, recurring_closed,
-    initial_cleans, retained, cancellations, skips, complaints,
-    revenue, marketing_spend ?? null, recurring_clients ?? null, move_out_cleans, notes ?? null
+    month, rep_name ?? null,
+    leads_in ?? null, leads_quoted ?? null, leads_closed ?? null, recurring_closed ?? null,
+    initial_cleans ?? null, retained ?? null, cancellations ?? null, skips ?? null, complaints ?? null,
+    revenue ?? null, marketing_spend ?? null, recurring_clients ?? null, move_out_cleans ?? null, notes ?? null
   )
 
   db.prepare(

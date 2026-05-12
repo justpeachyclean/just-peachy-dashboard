@@ -80,7 +80,10 @@ export default function Sales() {
       const payload = { month: formMonth, ...formData }
       Object.keys(payload).forEach(k => {
         if (k !== 'month' && k !== 'rep_name' && k !== 'notes') {
-          payload[k] = payload[k] !== '' && payload[k] !== undefined ? parseFloat(payload[k]) || 0 : undefined
+          // Send null for empty fields so the backend COALESCE preserves existing data
+          payload[k] = payload[k] !== '' && payload[k] !== undefined
+            ? (parseFloat(payload[k]) || 0)
+            : null
         }
       })
       const res = await apiFetch('/api/sales', {

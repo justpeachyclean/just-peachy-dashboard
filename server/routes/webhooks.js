@@ -201,11 +201,13 @@ router.post('/maidcentral', (req, res) => {
   }
 
   if (event_type === 'daily_revenue_summary') {
+    // total_revenue is a cumulative MTD snapshot — upsert so it sets (not adds) the month total
     const rev = total_revenue != null ? parseFloat(total_revenue) : null
     if (rev != null && rev > 0) {
       db.prepare(`
-        UPDATE monthly_sales SET revenue = ? WHERE month = ?
-      `).run(rev, month)
+        INSERT INTO monthly_sales (month, revenue) VALUES (?, ?)
+        ON CONFLICT(month) DO UPDATE SET revenue = excluded.revenue, updated_at = datetime('now')
+      `).run(month, rev)
     }
   }
 

@@ -52,6 +52,8 @@ router.post('/', (req, res) => {
 // PATCH /api/care/:id
 router.patch('/:id', (req, res) => {
   const { client_name, care_type, gift_type, gift_notes, scheduled_date, completed, completed_date, notes, assigned_to } = req.body
+  // 'completed_date' in req.body means the key was sent (even if null) — allows explicit clear
+  const completedDatePresent = 'completed_date' in req.body
   db.prepare(`
     UPDATE client_care SET
       client_name    = COALESCE(?, client_name),
@@ -60,7 +62,7 @@ router.patch('/:id', (req, res) => {
       gift_notes     = COALESCE(?, gift_notes),
       scheduled_date = COALESCE(?, scheduled_date),
       completed      = COALESCE(?, completed),
-      completed_date = COALESCE(?, completed_date),
+      completed_date = CASE WHEN ? THEN ? ELSE completed_date END,
       notes          = COALESCE(?, notes),
       assigned_to    = COALESCE(?, assigned_to),
       updated_at     = datetime('now')
@@ -69,7 +71,8 @@ router.patch('/:id', (req, res) => {
     client_name ?? null, care_type ?? null, gift_type ?? null, gift_notes ?? null,
     scheduled_date ?? null,
     completed !== undefined ? (completed ? 1 : 0) : null,
-    completed_date ?? null, notes ?? null, assigned_to ?? null,
+    completedDatePresent ? 1 : 0, completed_date ?? null,
+    notes ?? null, assigned_to ?? null,
     req.params.id
   )
   audit(req, 'care_updated', `ID ${req.params.id}`)

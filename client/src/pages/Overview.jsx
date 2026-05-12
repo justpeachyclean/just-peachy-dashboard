@@ -232,7 +232,7 @@ export default function Overview() {
         <KpiCard label="Retention Rate" value={summary.initial_cleans > 0 ? fmtPct(summary.retained / summary.initial_cleans) : '—'}
           sub={`${summary.retained} of ${summary.initial_cleans} initials kept`}
           borderColor="border-gray-200"
-          source="🔄 GHL new clients · manual initials & retained" />
+          source="🔄 auto via client log (GHL) · falls back to manual Entry" />
       </div>
 
       {/* Gift Card Sales */}

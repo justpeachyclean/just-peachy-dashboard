@@ -167,6 +167,7 @@ export default function Leads() {
   const [editId, setEditId] = useState(null)
   const [form, setForm] = useState(BLANK_FORM)
   const [saving, setSaving] = useState(false)
+  const [careMsg, setCareMsg] = useState(null)
 
   // Debounce search input → search state (300ms)
   useEffect(() => {
@@ -205,6 +206,7 @@ export default function Leads() {
   }
 
   const openEdit = r => {
+    setCareMsg(null)
     setEditId(r.id)
     setForm({
       record_date:          r.record_date || new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York' }).format(new Date()),
@@ -597,8 +599,29 @@ export default function Leads() {
                 <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Notes</label>
                 <input type="text" className="form-input" value={f(form.notes)} onChange={set('notes')} />
               </div>
+              {/* Add to Care Queue — shown when editing an existing recurring client */}
+              {editId && form.recurring_retained && (
+                <div className="pt-1 border-t border-gray-100">
+                  {careMsg
+                    ? <p className="text-xs text-ok font-medium py-1">{careMsg}</p>
+                    : (
+                      <button
+                        type="button"
+                        className="text-xs text-sage underline hover:no-underline"
+                        onClick={async () => {
+                          const r = await apiFetch(`/api/leads/${editId}/care`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
+                          const d = await r.json()
+                          setCareMsg(d.created ? '✓ Care timeline created — check Client Care page' : '✓ Already in care queue')
+                        }}
+                      >
+                        🌱 Add to Care Queue
+                      </button>
+                    )
+                  }
+                </div>
+              )}
               <div className="flex gap-3 justify-end pt-2">
-                <button type="button" onClick={() => setShowForm(false)} className="text-sm text-gray-500 hover:text-gray-700 px-4 py-2">Cancel</button>
+                <button type="button" onClick={() => { setShowForm(false); setCareMsg(null) }} className="text-sm text-gray-500 hover:text-gray-700 px-4 py-2">Cancel</button>
                 <button type="submit" disabled={saving} className="btn-primary text-sm">{saving ? 'Saving…' : 'Save'}</button>
               </div>
             </form>

@@ -105,21 +105,20 @@ export default function ClientNurture() {
   }
 
   const completeCare = async (item) => {
-    if (!window.confirm(`Mark "${item.care_type.replace(/_/g, ' ')}" as done for ${item.client_name}?`)) return
     await apiFetch(`/api/care/${item.id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ completed: 1, completed_date: todayEastern() }),
     })
+    setCareFilter('all') // show completed items so ↩ Undo is accessible
     loadCare()
   }
 
   const uncompleteCare = async (item) => {
-    if (!window.confirm(`Undo completion of "${item.care_type.replace(/_/g, ' ')}" for ${item.client_name}?`)) return
     await apiFetch(`/api/care/${item.id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ completed: 0 }),
+      body: JSON.stringify({ completed: 0, completed_date: null }),
     })
     loadCare()
   }

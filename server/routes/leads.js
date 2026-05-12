@@ -73,15 +73,21 @@ function createCareTimeline(clientName, frequency, startDate) {
     { care_type: 'one_year',         scheduled_date: addMonths(base, 12) },
   ]
 
+  const exists = db.prepare(
+    `SELECT COUNT(*) AS n FROM client_care WHERE client_name = ?`
+  ).get(clientName)
+
+  // Skip if this client already has care entries — prevents duplicates on re-trigger
+  if (exists.n > 0) return false
+
   const stmt = db.prepare(`
     INSERT INTO client_care (client_name, care_type, scheduled_date, notes)
     VALUES (?,?,?,?)
   `)
   for (const tp of touchpoints) {
-    try {
-      stmt.run(clientName, tp.care_type, tp.scheduled_date, 'Auto-created from lead conversion')
-    } catch (_) { /* ignore duplicates */ }
+    stmt.run(clientName, tp.care_type, tp.scheduled_date, 'Auto-created from lead conversion')
   }
+  return true
 }
 
 // Annual value = initial_clean_price + recurring_price × remaining_visits
@@ -274,6 +280,18 @@ router.patch('/:id', (req, res) => {
   }
 
   res.json({ ok: true })
+})
+
+// POST /api/leads/:id/care  — manually create care timeline for a recurring lead
+router.post('/:id/care', (req, res) => {
+  const lead = db.prepare('SELECT * FROM lead_records WHERE id = ?').get(req.params.id)
+  if (!lead) return res.status(404).json({ error: 'Not found' })
+  if (!lead.recurring_retained) return res.status(400).json({ error: 'Lead is not marked as recurring' })
+
+  const startDate = req.body.start_date || new Date().toISOString().split('T')[0]
+  const created = createCareTimeline(lead.client_name || 'Unknown', lead.frequency, startDate)
+  audit(req, 'care_timeline_created', `${lead.client_name} (lead ${lead.id}) — manual trigger`)
+  res.json({ ok: true, created, message: created ? 'Care timeline created' : 'Already exists — no changes made' })
 })
 
 // DELETE /api/leads/:id

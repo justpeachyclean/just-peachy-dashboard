@@ -29,41 +29,55 @@ router.get('/summary', (req, res) => {
     SELECT COUNT(*) AS total FROM maidcentral_events
     WHERE event_type='cancellation' AND event_date BETWEEN ? AND ?
   `).get(monthStart, monthEnd)
-  const cancellations = ms?.cancellations ?? mcCancellations.total
 
-  // Recurring clients — use snapshot if available, otherwise auto-calculate forward
-  // from the most recent known baseline: baseline + new_closes - cancellations
+  // cancelled_clients table (Cancellations page) is the most accurate source.
+  // Exclude 'Saved' outcomes — those clients stayed, so they don't count as cancellations.
+  const ccCancellations = db.prepare(`
+    SELECT COUNT(*) AS total FROM cancelled_clients
+    WHERE cancel_date BETWEEN ? AND ?
+      AND (save_outcome IS NULL OR save_outcome != 'Saved')
+  `).get(monthStart, monthEnd)
+
+  const cancellations = ccCancellations.total > 0
+    ? ccCancellations.total
+    : (ms?.cancellations ?? mcCancellations.total)
+
+  // Recurring clients — find the most recent snapshot, then apply live deltas on top.
+  // A snapshot in monthly_sales is treated as the starting-point baseline for that month;
+  // we always add this month's new closes (lead_records) and subtract this month's
+  // cancellations (cancelled_clients) so the count stays live without a manual update.
   const mcRecurring = db.prepare(`
     SELECT COUNT(DISTINCT client_id) AS total FROM maidcentral_events WHERE event_type='recurring_client'
   `).get()
 
-  let recurringClients = ms?.recurring_clients
-  let recurringClientsEstimated = false
+  // Find the best baseline: current month snapshot > most recent prior snapshot > MC count
+  const currentMonthSnap = ms?.recurring_clients ?? null
+  const priorBaseline = currentMonthSnap == null
+    ? db.prepare(`
+        SELECT month, recurring_clients FROM monthly_sales
+        WHERE recurring_clients IS NOT NULL AND month < ?
+        ORDER BY month DESC LIMIT 1
+      `).get(month)
+    : null
 
-  if (recurringClients == null) {
-    const baseline = db.prepare(`
-      SELECT month, recurring_clients FROM monthly_sales
-      WHERE recurring_clients IS NOT NULL AND month < ?
-      ORDER BY month DESC LIMIT 1
-    `).get(month)
+  let baselineClients
+  let recurringClientsEstimated = true
 
-    if (baseline) {
-      // Sum closes & cancellations for all complete months between baseline and now
-      const pastChanges = db.prepare(`
-        SELECT
-          COALESCE(SUM(leads_closed), 0) AS closed,
-          COALESCE(SUM(cancellations), 0) AS cancelled
-        FROM monthly_sales
-        WHERE month > ? AND month < ?
-      `).get(baseline.month, month)
-
-      // leadsClosed and cancellations for the current month are computed below;
-      // use a placeholder — will be patched after lead counts are resolved
-      recurringClients = baseline.recurring_clients + pastChanges.closed - pastChanges.cancelled
-      recurringClientsEstimated = true // current-month delta added after leadsClosed computed
-    } else {
-      recurringClients = mcRecurring.total
-    }
+  if (currentMonthSnap != null) {
+    baselineClients = currentMonthSnap
+  } else if (priorBaseline) {
+    // Add closes & cancellations for all complete months between baseline and now
+    const pastChanges = db.prepare(`
+      SELECT
+        COALESCE(SUM(leads_closed), 0) AS closed,
+        COALESCE(SUM(cancellations), 0) AS cancelled
+      FROM monthly_sales
+      WHERE month > ? AND month < ?
+    `).get(priorBaseline.month, month)
+    baselineClients = priorBaseline.recurring_clients + pastChanges.closed - pastChanges.cancelled
+  } else {
+    baselineClients = mcRecurring.total
+    recurringClientsEstimated = false // no baseline to estimate from
   }
 
   // Lead funnel: live counts from lead_records take priority over monthly_sales
@@ -74,6 +88,7 @@ router.get('/summary', (req, res) => {
       COUNT(CASE WHEN converted=1 THEN 1 END) AS leads_closed,
       COUNT(CASE WHEN converted=1 AND frequency NOT IN ('one_type','one-time','one time','') THEN 1 END) AS recurring_closed,
       COUNT(CASE WHEN initial_clean_booked=1 THEN 1 END) AS initial_cleans_booked,
+      COUNT(CASE WHEN initial_clean_booked=1 AND recurring_retained IS NOT NULL THEN 1 END) AS initial_cleans_with_outcome,
       COUNT(CASE WHEN initial_clean_booked=1 AND recurring_retained=1 THEN 1 END) AS initial_to_recurring
     FROM lead_records WHERE month = ?
   `).get(month)
@@ -82,15 +97,15 @@ router.get('/summary', (req, res) => {
   const leadsQuoted         = leadCounts.leads_in > 0 ? leadCounts.leads_quoted   : (ms?.leads_quoted ?? 0)
   const leadsClosed         = leadCounts.leads_in > 0 ? leadCounts.leads_closed   : (ms?.leads_closed ?? 0)
   const recurringClosed     = leadCounts.leads_in > 0 ? leadCounts.recurring_closed : (ms?.recurring_closed ?? 0)
-  const initialCleansBooked = leadCounts.initial_cleans_booked ?? 0
-  const initialToRecurring  = leadCounts.initial_to_recurring  ?? 0
+  const initialCleansBooked      = leadCounts.initial_cleans_booked ?? 0
+  const initialCleansWithOutcome = leadCounts.initial_cleans_with_outcome ?? 0
+  const initialToRecurring       = leadCounts.initial_to_recurring  ?? 0
 
-  // Patch in current-month closes & cancellations for estimated recurring client count
-  // Use recurringClosed (non-one-time) where available; fall back to leadsClosed
-  if (recurringClientsEstimated) {
-    const newThisMonth = recurringClosed > 0 ? recurringClosed : leadsClosed
-    recurringClients = recurringClients + newThisMonth - cancellations
-  }
+  // Apply this month's live deltas: new recurring closes − cancellations
+  const newClosesThisMonth = recurringClosed > 0 ? recurringClosed : leadsClosed
+  const recurringClients = recurringClientsEstimated
+    ? baselineClients + newClosesThisMonth - cancellations
+    : baselineClients
 
   // Marketing spend: QB > monthly_sales > manual entries
   const qbMarketing = db.prepare(`
@@ -169,8 +184,8 @@ router.get('/summary', (req, res) => {
     initial_cleans_booked: initialCleansBooked,
     initial_to_recurring: initialToRecurring,
     initial_to_recurring_rate: leadsClosed > 0 ? initialToRecurring / leadsClosed : null,
-    initial_cleans: ms?.initial_cleans ?? 0,
-    retained: ms?.retained ?? 0,
+    initial_cleans: initialCleansWithOutcome > 0 ? initialCleansWithOutcome : (ms?.initial_cleans ?? 0),
+    retained: initialCleansWithOutcome > 0 ? initialToRecurring : (ms?.retained ?? 0),
     skips: ms?.skips > 0 ? ms.skips : staffChanges.skips_sum,
     complaints: ms?.complaints ?? 0,
     marketing_spend: marketingSpend,
@@ -413,11 +428,20 @@ router.get('/economics', (req, res) => {
     ? ytdSales.revenue / ytdSales.months_with_data / clientSnap.avg_clients
     : null
 
+  // YTD cancellations: cancelled_clients is the primary source (same logic as /summary)
+  // Excludes 'Saved' outcomes since those clients stayed
+  const ccYTD = db.prepare(`
+    SELECT COUNT(*) AS total FROM cancelled_clients
+    WHERE SUBSTR(cancel_date,1,4) = ?
+      AND (save_outcome IS NULL OR save_outcome != 'Saved')
+  `).get(String(year))
+  const ytdCancellations = ccYTD.total > 0 ? ccYTD.total : ytdSales.cancellations
+
   const attritionRate = (() => {
     const recurring = clientSnap.avg_clients || 0
-    const cancels = ytdSales.cancellations
+    const cancels = ytdCancellations
     const atStart = recurring + cancels
-    return atStart > 0 ? cancels / atStart / ytdSales.months_with_data : null
+    return atStart > 0 ? cancels / atStart / (ytdSales.months_with_data || 1) : null
   })()
 
   const avgLifetimeMonths = attritionRate > 0 ? 1 / attritionRate : null
@@ -475,7 +499,7 @@ router.get('/economics', (req, res) => {
       training_spend: trainingSpend,
       leads_in: ytdLeadsIn,
       leads_closed: ytdLeadsClosed,
-      cancellations: ytdSales.cancellations,
+      cancellations: ytdCancellations,
       new_hires: manualYTD.new_hires,
       quit: ytdQuit,
       fired: ytdFired,

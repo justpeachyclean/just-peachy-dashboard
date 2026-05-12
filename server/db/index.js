@@ -101,6 +101,18 @@ const migrations = [
   )`,
   `INSERT OR IGNORE INTO settings (key, value) VALUES ('staff_headcount_baseline', NULL)`,
   `INSERT OR IGNORE INTO settings (key, value) VALUES ('staff_headcount_baseline_date', NULL)`,
+  // Full employee directory (active + alumni) — imported from MaidCentral / Excel
+  `CREATE TABLE IF NOT EXISTS employees (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    employee_name     TEXT NOT NULL,
+    hire_date         TEXT,
+    termination_date  TEXT,
+    termination_type  TEXT,
+    notes             TEXT,
+    source            TEXT DEFAULT 'manual',
+    external_id       TEXT UNIQUE,
+    created_at        TEXT DEFAULT (datetime('now'))
+  )`,
 ]
 for (const sql of migrations) {
   try { db.exec(sql) } catch (_) { /* column already exists — safe to ignore */ }

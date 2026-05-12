@@ -791,6 +791,398 @@ function DeparturesTab({ year, setYear }) {
   )
 }
 
+// ── Staff Directory tab ───────────────────────────────────────────────────
+function StaffDirectoryTab() {
+  const [employees, setEmployees] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [statusFilter, setStatusFilter] = useState('all')
+  const [search, setSearch] = useState('')
+  const [showAdd, setShowAdd] = useState(false)
+  const [editId, setEditId] = useState(null)
+  const [editForm, setEditForm] = useState({})
+  const [addForm, setAddForm] = useState({ employee_name: '', hire_date: '', termination_date: '', termination_type: '', notes: '' })
+  const [addSaving, setAddSaving] = useState(false)
+  const [addErr, setAddErr] = useState(null)
+  const [importRows, setImportRows] = useState(null)   // rows after parse
+  const [importing, setImporting] = useState(false)
+  const [importMsg, setImportMsg] = useState(null)
+  const [importTypeMap, setImportTypeMap] = useState({}) // index → type override
+
+  function load() {
+    setLoading(true)
+    apiFetch('/api/staff/employees').then(r => r.json()).then(d => { setEmployees(d); setLoading(false) })
+  }
+
+  useEffect(() => { load() }, [])
+
+  // ── helpers ─────────────────────────────────────────────────────────────
+  function tenureLabel(hire, term) {
+    if (!hire) return null
+    const start = new Date(hire + 'T12:00:00Z')
+    const end   = term ? new Date(term + 'T12:00:00Z') : new Date()
+    const days  = Math.round((end - start) / 86400000)
+    if (days < 0) return null
+    if (days < 30) return `${days}d`
+    const months = Math.round(days / 30.4)
+    if (months < 12) return `${months}mo`
+    const years = (days / 365.25).toFixed(1)
+    return `${years}yr`
+  }
+
+  // ── File import ─────────────────────────────────────────────────────────
+  async function handleFileChange(e) {
+    const file = e.target.files[0]
+    if (!file) return
+    e.target.value = ''
+    setImportMsg(null)
+    setImporting(true)
+    try {
+      const buf = await file.arrayBuffer()
+      const b64 = btoa(String.fromCharCode(...new Uint8Array(buf)))
+      const r = await apiFetch('/api/staff/employees/parse-excel', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ data: b64 }),
+      })
+      const d = await r.json()
+      if (!r.ok) throw new Error(d.error || 'Parse failed')
+      setImportRows(d.rows)
+      setImportTypeMap({})
+    } catch (err) {
+      setImportMsg({ type: 'error', text: `Parse error: ${err.message}` })
+    } finally {
+      setImporting(false)
+    }
+  }
+
+  async function commitImport() {
+    if (!importRows?.length) return
+    setImporting(true)
+    try {
+      const rows = importRows.map((r, i) => ({
+        ...r,
+        termination_type: importTypeMap[i] !== undefined ? importTypeMap[i] : r.termination_type,
+      }))
+      const res = await apiFetch('/api/staff/employees/bulk', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rows }),
+      })
+      const d = await res.json()
+      setImportMsg({ type: 'ok', text: `✓ Imported ${d.inserted} employees` })
+      setImportRows(null)
+      load()
+    } catch (err) {
+      setImportMsg({ type: 'error', text: err.message })
+    } finally {
+      setImporting(false)
+    }
+  }
+
+  // ── Add one ──────────────────────────────────────────────────────────────
+  async function handleAdd(e) {
+    e.preventDefault()
+    if (!addForm.employee_name.trim()) return setAddErr('Name required')
+    setAddSaving(true); setAddErr(null)
+    const payload = { ...addForm }
+    if (!payload.termination_date) { payload.termination_date = null; payload.termination_type = null }
+    const r = await apiFetch('/api/staff/employees', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    })
+    if (!r.ok) { const d = await r.json(); setAddErr(d.error || 'Failed'); setAddSaving(false); return }
+    setAddForm({ employee_name: '', hire_date: '', termination_date: '', termination_type: '', notes: '' })
+    setShowAdd(false)
+    setAddSaving(false)
+    load()
+  }
+
+  // ── Edit ─────────────────────────────────────────────────────────────────
+  function startEdit(emp) {
+    setEditId(emp.id)
+    setEditForm({
+      employee_name: emp.employee_name,
+      hire_date: emp.hire_date || '',
+      termination_date: emp.termination_date || '',
+      termination_type: emp.termination_type || '',
+      notes: emp.notes || '',
+    })
+  }
+
+  async function saveEdit(id) {
+    const payload = { ...editForm }
+    if (!payload.termination_date) { payload.termination_date = null; payload.termination_type = null }
+    await apiFetch(`/api/staff/employees/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    })
+    setEditId(null)
+    load()
+  }
+
+  async function deleteEmp(emp) {
+    if (!confirm(`Delete ${emp.employee_name}?`)) return
+    await apiFetch(`/api/staff/employees/${emp.id}`, { method: 'DELETE' })
+    load()
+  }
+
+  // ── Filtering ────────────────────────────────────────────────────────────
+  const filtered = employees.filter(e => {
+    if (statusFilter === 'active' && e.termination_date) return false
+    if (statusFilter === 'terminated' && !e.termination_date) return false
+    if (search) {
+      const q = search.toLowerCase()
+      if (!e.employee_name.toLowerCase().includes(q)) return false
+    }
+    return true
+  })
+
+  const activeCount     = employees.filter(e => !e.termination_date).length
+  const terminatedCount = employees.filter(e => !!e.termination_date).length
+
+  return (
+    <div>
+      {/* Summary bar */}
+      <div className="card mb-5">
+        <div className="grid grid-cols-3 gap-4">
+          <StatCard label="Total Records" value={employees.length} color="text-ink" />
+          <StatCard label="Active" value={activeCount} color="text-ok" />
+          <StatCard label="Alumni" value={terminatedCount} color="text-gray-500" />
+        </div>
+      </div>
+
+      {/* Import banner */}
+      <div className="card mb-5">
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+          <h2 className="text-sm font-semibold text-gray-700">Import from Excel / CSV</h2>
+          <label className={`btn-primary text-sm cursor-pointer ${importing ? 'opacity-50 pointer-events-none' : ''}`}>
+            {importing ? 'Parsing…' : '↑ Choose File'}
+            <input type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={handleFileChange} disabled={importing} />
+          </label>
+        </div>
+        <p className="text-xs text-gray-400 mb-3">
+          Expects columns: <span className="font-mono">First name, Last name, Hire Date, Termination Date</span>.
+          Employees without a termination date are imported as active.
+        </p>
+        {importMsg && (
+          <p className={`text-sm font-medium ${importMsg.type === 'ok' ? 'text-ok' : 'text-danger'}`}>{importMsg.text}</p>
+        )}
+
+        {importRows && (
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-xs text-gray-500 font-medium">{importRows.length} rows parsed — set termination type for leavers, then confirm</p>
+              <div className="flex gap-2">
+                <button className="btn-secondary text-xs" onClick={() => setImportRows(null)}>Cancel</button>
+                <button className="btn-primary text-xs" onClick={commitImport} disabled={importing}>
+                  {importing ? 'Importing…' : `Import ${importRows.length} employees`}
+                </button>
+              </div>
+            </div>
+            <div className="overflow-x-auto max-h-72 overflow-y-auto border border-gray-100 rounded-xl">
+              <table className="w-full text-xs min-w-[560px]">
+                <thead className="sticky top-0 bg-white">
+                  <tr className="text-gray-400 uppercase border-b border-gray-100">
+                    <th className="text-left py-1.5 px-2 font-medium">Name</th>
+                    <th className="text-left py-1.5 px-2 font-medium">Hire Date</th>
+                    <th className="text-left py-1.5 px-2 font-medium">Term Date</th>
+                    <th className="text-left py-1.5 px-2 font-medium">Type</th>
+                    <th className="text-left py-1.5 px-2 font-medium">Notes</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {importRows.map((r, i) => (
+                    <tr key={i} className="border-b border-gray-50">
+                      <td className="py-1.5 px-2 font-medium text-ink">{r.employee_name}</td>
+                      <td className="py-1.5 px-2 text-gray-500">{r.hire_date || '—'}</td>
+                      <td className="py-1.5 px-2 text-gray-500">{r.termination_date || <span className="text-ok">Active</span>}</td>
+                      <td className="py-1.5 px-2">
+                        {r.termination_date ? (
+                          <select
+                            className="input py-0.5 text-xs"
+                            value={importTypeMap[i] ?? ''}
+                            onChange={e => setImportTypeMap(m => ({ ...m, [i]: e.target.value || null }))}
+                          >
+                            <option value="">— select —</option>
+                            <option value="quit">Quit</option>
+                            <option value="fired">Fired</option>
+                          </select>
+                        ) : (
+                          <span className="text-gray-300">—</span>
+                        )}
+                      </td>
+                      <td className="py-1.5 px-2 text-gray-400">{r.notes || '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Controls */}
+      <div className="flex flex-wrap items-center gap-3 mb-4">
+        <div className="flex gap-1 bg-gray-100 p-1 rounded-lg">
+          {[['all', 'All'], ['active', 'Active'], ['terminated', 'Alumni']].map(([v, l]) => (
+            <button key={v} onClick={() => setStatusFilter(v)}
+              className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${statusFilter === v ? 'bg-white text-ink shadow-sm' : 'text-gray-500 hover:text-ink'}`}
+            >{l}</button>
+          ))}
+        </div>
+        <input
+          className="input text-sm py-1.5 flex-1 min-w-[160px] max-w-xs"
+          placeholder="Search by name…"
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+        />
+        <div className="ml-auto">
+          <button onClick={() => setShowAdd(s => !s)} className="btn-primary text-sm">+ Add Employee</button>
+        </div>
+      </div>
+
+      {/* Quick add form */}
+      {showAdd && (
+        <div className="card mb-4">
+          <h3 className="text-sm font-semibold text-gray-700 mb-3">Add Employee</h3>
+          <form onSubmit={handleAdd} className="grid grid-cols-2 sm:grid-cols-3 gap-3 items-end">
+            {addErr && <p className="col-span-full text-danger text-xs">{addErr}</p>}
+            <div className="col-span-full sm:col-span-1">
+              <label className="block text-xs font-medium text-gray-500 mb-1">Name *</label>
+              <input className="input w-full" placeholder="Full name" value={addForm.employee_name} onChange={e => setAddForm(f => ({ ...f, employee_name: e.target.value }))} />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1">Hire Date</label>
+              <input type="date" className="input w-full" value={addForm.hire_date} onChange={e => setAddForm(f => ({ ...f, hire_date: e.target.value }))} />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1">Termination Date</label>
+              <input type="date" className="input w-full" value={addForm.termination_date} onChange={e => setAddForm(f => ({ ...f, termination_date: e.target.value }))} />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1">Type</label>
+              <select className="input w-full" value={addForm.termination_type} onChange={e => setAddForm(f => ({ ...f, termination_type: e.target.value }))} disabled={!addForm.termination_date}>
+                <option value="">Active</option>
+                <option value="quit">Quit</option>
+                <option value="fired">Fired</option>
+              </select>
+            </div>
+            <div className="col-span-full sm:col-span-1">
+              <label className="block text-xs font-medium text-gray-500 mb-1">Notes</label>
+              <input className="input w-full" placeholder="Optional…" value={addForm.notes} onChange={e => setAddForm(f => ({ ...f, notes: e.target.value }))} />
+            </div>
+            <div className="flex gap-2 col-span-full sm:col-span-1">
+              <button type="button" className="btn-secondary flex-1 text-sm" onClick={() => setShowAdd(false)}>Cancel</button>
+              <button type="submit" className="btn-primary flex-1 text-sm" disabled={addSaving}>{addSaving ? 'Saving…' : 'Add'}</button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* Employee table */}
+      <div className="card overflow-x-auto">
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="font-semibold text-ink">
+            Staff Directory
+            {search || statusFilter !== 'all' ? <span className="text-sm text-gray-400 font-normal ml-2">({filtered.length} shown)</span> : ''}
+          </h2>
+          {filtered.length > 0 && (
+            <button
+              onClick={() => exportCsv('jpc-staff.csv', filtered.map(e => ({ name: e.employee_name, hire_date: e.hire_date || '', termination_date: e.termination_date || '', type: e.termination_type || 'active', notes: e.notes || '' })))}
+              className="btn-secondary text-sm"
+            >↓ Export</button>
+          )}
+        </div>
+        {loading ? (
+          <div className="py-10 text-center text-gray-400 text-sm animate-pulse">Loading…</div>
+        ) : filtered.length === 0 ? (
+          <div className="py-10 text-center">
+            <p className="text-gray-400 text-sm">No employees found.</p>
+            <p className="text-gray-400 text-xs mt-1">Import from Excel above or add manually.</p>
+          </div>
+        ) : (
+          <table className="w-full text-sm min-w-[600px]">
+            <thead>
+              <tr className="text-xs text-gray-400 uppercase border-b border-gray-100">
+                <th className="text-left py-2 pr-3 font-medium">Name</th>
+                <th className="text-left py-2 px-2 font-medium">Hire Date</th>
+                <th className="text-left py-2 px-2 font-medium">Tenure</th>
+                <th className="text-left py-2 px-2 font-medium">Status</th>
+                <th className="text-left py-2 px-2 font-medium">Term Date</th>
+                <th className="text-left py-2 px-2 font-medium">Notes</th>
+                <th className="text-right py-2 pl-2 font-medium">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map(emp => (
+                <tr key={emp.id} className="border-b border-gray-50 hover:bg-gray-50/50">
+                  {editId === emp.id ? (
+                    <>
+                      <td className="py-2 pr-2">
+                        <input className="input w-full text-xs py-1" value={editForm.employee_name} onChange={e => setEditForm(f => ({ ...f, employee_name: e.target.value }))} />
+                      </td>
+                      <td className="py-2 px-2">
+                        <input type="date" className="input text-xs py-1" value={editForm.hire_date} onChange={e => setEditForm(f => ({ ...f, hire_date: e.target.value }))} />
+                      </td>
+                      <td className="py-2 px-2 text-gray-400 text-xs">{tenureLabel(editForm.hire_date || null, editForm.termination_date || null) || '—'}</td>
+                      <td className="py-2 px-2">
+                        <select className="input text-xs py-1" value={editForm.termination_type} onChange={e => setEditForm(f => ({ ...f, termination_type: e.target.value }))} disabled={!editForm.termination_date}>
+                          <option value="">Active</option>
+                          <option value="quit">Quit</option>
+                          <option value="fired">Fired</option>
+                        </select>
+                      </td>
+                      <td className="py-2 px-2">
+                        <input type="date" className="input text-xs py-1" value={editForm.termination_date} onChange={e => setEditForm(f => ({ ...f, termination_date: e.target.value }))} />
+                      </td>
+                      <td className="py-2 px-2">
+                        <input className="input text-xs py-1 w-full" value={editForm.notes} onChange={e => setEditForm(f => ({ ...f, notes: e.target.value }))} placeholder="Notes…" />
+                      </td>
+                      <td className="py-2 pl-2 text-right">
+                        <div className="flex justify-end gap-1">
+                          <button onClick={() => saveEdit(emp.id)} className="text-xs px-2 py-0.5 rounded bg-ok/10 text-ok hover:bg-ok/20">Save</button>
+                          <button onClick={() => setEditId(null)} className="text-xs px-2 py-0.5 rounded bg-gray-100 text-gray-500">Cancel</button>
+                        </div>
+                      </td>
+                    </>
+                  ) : (
+                    <>
+                      <td className="py-2.5 pr-3 font-medium text-ink whitespace-nowrap">{emp.employee_name}</td>
+                      <td className="py-2.5 px-2 text-gray-500 whitespace-nowrap">{emp.hire_date || '—'}</td>
+                      <td className="py-2.5 px-2 text-gray-400 text-xs whitespace-nowrap">{tenureLabel(emp.hire_date, emp.termination_date) || '—'}</td>
+                      <td className="py-2.5 px-2 whitespace-nowrap">
+                        {!emp.termination_date ? (
+                          <span className="inline-block text-xs font-medium px-2 py-0.5 rounded-full bg-green-100 text-green-700">Active</span>
+                        ) : emp.termination_type === 'quit' ? (
+                          <span className="inline-block text-xs font-medium px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">Quit</span>
+                        ) : emp.termination_type === 'fired' ? (
+                          <span className="inline-block text-xs font-medium px-2 py-0.5 rounded-full bg-red-100 text-red-600">Fired</span>
+                        ) : (
+                          <span className="inline-block text-xs font-medium px-2 py-0.5 rounded-full bg-gray-100 text-gray-500">Alumni</span>
+                        )}
+                      </td>
+                      <td className="py-2.5 px-2 text-gray-500 whitespace-nowrap">{emp.termination_date || '—'}</td>
+                      <td className="py-2.5 px-2 text-gray-400 max-w-[160px] truncate" title={emp.notes}>{emp.notes || '—'}</td>
+                      <td className="py-2.5 pl-2 text-right">
+                        <div className="flex justify-end gap-1">
+                          <button onClick={() => startEdit(emp)} className="text-xs px-2 py-0.5 rounded bg-gray-100 text-gray-500 hover:bg-gray-200">Edit</button>
+                          <button onClick={() => deleteEmp(emp)} className="text-xs px-2 py-0.5 rounded bg-gray-100 text-gray-400 hover:bg-red-50 hover:text-red-500">Del</button>
+                        </div>
+                      </td>
+                    </>
+                  )}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
+  )
+}
+
 export default function Hiring() {
   const [tab, setTab] = useState('pipeline')
   const [year, setYear] = useState(new Date().getFullYear())
@@ -824,11 +1216,18 @@ export default function Hiring() {
         >
           Departures
         </button>
+        <button
+          onClick={() => setTab('directory')}
+          className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${tab === 'directory' ? 'bg-white text-ink shadow-sm' : 'text-gray-500 hover:text-ink'}`}
+        >
+          Staff Directory
+        </button>
       </div>
 
       {tab === 'pipeline' && <PipelineTab year={year} setYear={setYear} />}
       {tab === 'staffing' && <StaffingTrendsTab year={year} setYear={setYear} />}
       {tab === 'departures' && <DeparturesTab year={year} setYear={setYear} />}
+      {tab === 'directory' && <StaffDirectoryTab />}
     </div>
   )
 }

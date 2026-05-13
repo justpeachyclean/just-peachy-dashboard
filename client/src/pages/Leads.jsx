@@ -167,7 +167,7 @@ export default function Leads() {
   const [filter, setFilter] = useState({
     year: String(new Date().getFullYear()),
     month: String(new Date().getMonth() + 1).padStart(2, '0'),
-    converted: 'yes',  // default: show only converted clients; switch to "all" to see full funnel
+    converted: 'all',  // default: show all leads (funnel view)
   })
   const [searchInput, setSearchInput] = useState('')
   const [search, setSearch] = useState('')

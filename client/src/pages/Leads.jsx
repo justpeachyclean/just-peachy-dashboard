@@ -167,7 +167,7 @@ export default function Leads() {
   const [filter, setFilter] = useState({
     year: String(new Date().getFullYear()),
     month: String(new Date().getMonth() + 1).padStart(2, '0'),
-    converted: 'all',
+    converted: 'yes',  // default: show only converted clients; switch to "all" to see full funnel
   })
   const [searchInput, setSearchInput] = useState('')
   const [search, setSearch] = useState('')
@@ -388,10 +388,10 @@ export default function Leads() {
           <option value="">All months</option>
           {MONTH_NAMES.map((m, i) => <option key={i} value={String(i+1).padStart(2,'0')}>{m}</option>)}
         </select>
-        <select className="form-input w-36 text-sm" value={filter.converted} onChange={e => setFilter(f => ({ ...f, converted: e.target.value }))}>
-          <option value="all">All leads</option>
-          <option value="yes">Converted only</option>
-          <option value="no">Not converted</option>
+        <select className="form-input w-44 text-sm" value={filter.converted} onChange={e => setFilter(f => ({ ...f, converted: e.target.value }))}>
+          <option value="yes">✓ Clients (converted)</option>
+          <option value="all">All leads (funnel view)</option>
+          <option value="no">Quoted, not closed</option>
         </select>
         <input
           type="text"

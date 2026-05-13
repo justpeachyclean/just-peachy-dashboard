@@ -207,20 +207,32 @@ router.post('/employees/parse-excel', (req, res) => {
       return ''
     }
 
-    // Convert "M/D/YYYY" or "MM/DD/YYYY" to "YYYY-MM-DD"
+    // Convert "M/D/YYYY", "MM/DD/YYYY", ISO strings, or JS Date objects → "YYYY-MM-DD"
     function parseDate(s) {
       if (!s) return null
-      // Handle Excel serial numbers
+      // JS Date object (Numbers exports dates as Date objects)
+      if (s instanceof Date) {
+        // Use UTC date to avoid timezone shifting the day
+        const y = s.getUTCFullYear(), m = s.getUTCMonth() + 1, d = s.getUTCDate()
+        return `${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`
+      }
+      // Handle Excel/Numbers serial numbers
       if (!isNaN(s) && Number(s) > 1000) {
         const d = XLSX.SSF.parse_date_code(Number(s))
         if (d) return `${d.y}-${String(d.m).padStart(2,'0')}-${String(d.d).padStart(2,'0')}`
       }
-      const parts = String(s).split('/')
+      const str = String(s).trim()
+      // ISO string (e.g. "2026-01-15T05:00:00.000Z")
+      if (/^\d{4}-\d{2}-\d{2}T/.test(str)) return str.slice(0, 10)
+      // Already YYYY-MM-DD
+      if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str
+      // M/D/YYYY or MM/DD/YYYY
+      const parts = str.split('/')
       if (parts.length === 3) {
         const [m, d, y] = parts
         return `${y.padStart(4,'20')}-${m.padStart(2,'0')}-${d.padStart(2,'0')}`
       }
-      return s || null
+      return str || null
     }
 
     const rows = raw.slice(1).map(row => {

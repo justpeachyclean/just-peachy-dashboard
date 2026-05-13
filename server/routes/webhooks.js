@@ -160,57 +160,6 @@ router.post('/ghl', (req, res) => {
   res.json({ ok: true })
 })
 
-// GET /api/webhook/admin/bad-won-events — list opportunity_won events from last 48h (protected by webhook secret)
-// TEMP endpoint to diagnose/fix Quote Sent Zap damage — remove after use
-router.get('/admin/bad-won-events', (req, res) => {
-  if (!verifySecret(req, res)) return
-  const events = db.prepare(`
-    SELECT ge.id, ge.event_type, ge.opportunity_id, ge.contact_id,
-           ge.created_at, ge.raw_payload,
-           lr.id AS lead_id, lr.client_name, lr.converted, lr.recurring_retained,
-           lr.frequency, lr.record_date, lr.source
-    FROM ghl_events ge
-    LEFT JOIN lead_records lr ON lr.external_id = ge.opportunity_id
-    WHERE ge.event_type = 'opportunity_won'
-      AND datetime(ge.created_at) >= datetime('now', '-48 hours')
-    ORDER BY ge.created_at DESC
-  `).all()
-  res.json({ count: events.length, events })
-})
-
-// POST /api/webhook/admin/revert-bad-won/:opportunity_id — revert a single lead (protected)
-router.post('/admin/revert-bad-won/:opportunity_id', (req, res) => {
-  if (!verifySecret(req, res)) return
-  const { opportunity_id } = req.params
-  const result = db.prepare(`
-    UPDATE lead_records SET converted = 0, recurring_retained = 0
-    WHERE external_id = ?
-  `).run(opportunity_id)
-  res.json({ ok: true, changes: result.changes, opportunity_id })
-})
-
-// POST /api/webhook/admin/revert-all-bad-won — revert ALL opportunity_won leads from last 48h
-router.post('/admin/revert-all-bad-won', (req, res) => {
-  if (!verifySecret(req, res)) return
-  // Find all opportunity_ids from ghl_events that fired opportunity_won in last 48h
-  const badEvents = db.prepare(`
-    SELECT DISTINCT opportunity_id
-    FROM ghl_events
-    WHERE event_type = 'opportunity_won'
-      AND datetime(created_at) >= datetime('now', '-48 hours')
-      AND opportunity_id IS NOT NULL
-  `).all()
-  const oppIds = badEvents.map(e => e.opportunity_id)
-  let reverted = 0
-  db.transaction(() => {
-    for (const oppId of oppIds) {
-      const r = db.prepare(`UPDATE lead_records SET converted = 0, recurring_retained = 0 WHERE external_id = ?`).run(oppId)
-      reverted += r.changes
-    }
-  })()
-  res.json({ ok: true, opportunity_ids_checked: oppIds.length, leads_reverted: reverted, ids: oppIds })
-})
-
 // POST /api/webhook/maidcentral
 router.post('/maidcentral', (req, res) => {
   if (!verifySecret(req, res)) return

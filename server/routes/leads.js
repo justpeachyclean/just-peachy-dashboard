@@ -65,7 +65,14 @@ function createCareTimeline(clientName, frequency, startDate) {
   const fourthOffset = interval * 3
   const sixthOffset  = interval * 5
 
+  // Welcome call & OTC 24-hr call happen before the first recurring clean.
+  // Approximate: initial clean = one interval before the first recurring date.
+  const welcomeDate  = addDays(base, -interval)      // day of the initial clean
+  const otc24hrDate  = addDays(base, -interval + 1)  // day after the initial clean
+
   const touchpoints = [
+    { care_type: 'welcome_call',     scheduled_date: welcomeDate },
+    { care_type: 'otc_24hr_call',   scheduled_date: otc24hrDate },
     { care_type: 'first_recurring',  scheduled_date: base },
     { care_type: 'fourth_recurring', scheduled_date: addDays(base, fourthOffset) },
     { care_type: 'sixth_recurring',  scheduled_date: addDays(base, sixthOffset) },
@@ -292,6 +299,51 @@ router.post('/:id/care', (req, res) => {
   const created = createCareTimeline(lead.client_name || 'Unknown', lead.frequency, startDate)
   audit(req, 'care_timeline_created', `${lead.client_name} (lead ${lead.id}) — manual trigger`)
   res.json({ ok: true, created, message: created ? 'Care timeline created' : 'Already exists — no changes made' })
+})
+
+// POST /api/leads/care/backfill-early-stages
+// Adds welcome_call & otc_24hr_call to clients who only have the old 5-touchpoint timeline
+router.post('/care/backfill-early-stages', (req, res) => {
+  const CLEAN_INTERVAL_DAYS_LOCAL = {
+    weekly: 7, biweekly: 14, 'bi-weekly': 14,
+    monthly: 28, 'every 4 weeks': 28, 'tri-weekly': 10,
+  }
+
+  // Find clients who have first_recurring but no welcome_call
+  const clients = db.prepare(`
+    SELECT DISTINCT cc.client_name,
+      cc.scheduled_date AS first_recurring_date,
+      lr.frequency
+    FROM client_care cc
+    LEFT JOIN lead_records lr ON LOWER(lr.client_name) = LOWER(cc.client_name)
+      AND lr.recurring_retained = 1
+    WHERE cc.care_type = 'first_recurring'
+      AND NOT EXISTS (
+        SELECT 1 FROM client_care wc
+        WHERE wc.client_name = cc.client_name AND wc.care_type = 'welcome_call'
+      )
+    GROUP BY cc.client_name
+  `).all()
+
+  const stmt = db.prepare(`
+    INSERT OR IGNORE INTO client_care (client_name, care_type, scheduled_date, notes)
+    VALUES (?,?,?,?)
+  `)
+
+  let patched = 0
+  const tx = db.transaction(() => {
+    for (const row of clients) {
+      const interval = CLEAN_INTERVAL_DAYS_LOCAL[(row.frequency || '').toLowerCase().trim()] || 14
+      const welcomeDate = addDays(row.first_recurring_date, -interval)
+      const otcDate     = addDays(row.first_recurring_date, -interval + 1)
+      stmt.run(row.client_name, 'welcome_call',   welcomeDate, 'Backfilled — auto-created from lead conversion')
+      stmt.run(row.client_name, 'otc_24hr_call', otcDate,     'Backfilled — auto-created from lead conversion')
+      patched++
+    }
+  })
+  tx()
+
+  res.json({ ok: true, clients_patched: patched })
 })
 
 // DELETE /api/leads/:id

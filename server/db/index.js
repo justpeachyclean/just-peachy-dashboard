@@ -118,6 +118,35 @@ for (const sql of migrations) {
   try { db.exec(sql) } catch (_) { /* column already exists — safe to ignore */ }
 }
 
+// Backfill welcome_call & otc_24hr_call for clients who only have the old 5-stage timeline
+try {
+  const INTERVAL = { weekly:7, biweekly:14, 'bi-weekly':14, monthly:28, 'every 4 weeks':28, 'tri-weekly':10 }
+  const missing = db.prepare(`
+    SELECT cc.client_name, cc.scheduled_date AS first_recurring_date,
+           (SELECT frequency FROM lead_records lr
+            WHERE LOWER(lr.client_name)=LOWER(cc.client_name) AND lr.recurring_retained=1
+            ORDER BY lr.id DESC LIMIT 1) AS frequency
+    FROM client_care cc
+    WHERE cc.care_type = 'first_recurring'
+      AND NOT EXISTS (SELECT 1 FROM client_care wc WHERE wc.client_name=cc.client_name AND wc.care_type='welcome_call')
+  `).all()
+  const ins = db.prepare(`INSERT OR IGNORE INTO client_care (client_name, care_type, scheduled_date, notes) VALUES (?,?,?,?)`)
+  const note = 'Backfilled — auto-created from lead conversion'
+  const addDaysLocal = (dateStr, days) => {
+    const d = new Date(dateStr + 'T12:00:00Z')
+    d.setUTCDate(d.getUTCDate() + days)
+    return d.toISOString().split('T')[0]
+  }
+  db.transaction(() => {
+    for (const row of missing) {
+      const iv = INTERVAL[(row.frequency || '').toLowerCase().trim()] || 14
+      ins.run(row.client_name, 'welcome_call',   addDaysLocal(row.first_recurring_date, -iv),     note)
+      ins.run(row.client_name, 'otc_24hr_call', addDaysLocal(row.first_recurring_date, -iv + 1), note)
+    }
+  })()
+  if (missing.length > 0) console.log(`✅ Backfilled welcome_call/otc_24hr_call for ${missing.length} clients`)
+} catch(e) { console.warn('Care backfill skipped:', e.message) }
+
 // Seed first admin user if none exist
 const { randomBytes, scryptSync } = require('crypto')
 function hashPassword(pw) {

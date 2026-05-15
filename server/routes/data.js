@@ -16,13 +16,10 @@ router.get('/summary', (req, res) => {
   // Pull from monthly_sales first (manual summary), fallback to webhook events
   const ms = db.prepare('SELECT * FROM monthly_sales WHERE month = ?').get(month)
 
-  // Revenue: monthly_sales > maidcentral events
-  const mcRevenue = db.prepare(`
-    SELECT COALESCE(SUM(amount), 0) AS total
-    FROM maidcentral_events WHERE event_type='revenue' AND event_date BETWEEN ? AND ?
-  `).get(monthStart, monthEnd)
-
-  const revenue = ms?.revenue > 0 ? ms.revenue : mcRevenue.total
+  // Revenue priority: invoice_revenue (tip-free, auto-accumulated) > manual revenue > legacy fallback
+  const revenue = (ms?.invoice_revenue > 0)
+    ? ms.invoice_revenue
+    : (ms?.revenue > 0 ? ms.revenue : 0)
 
   // Cancellations (computed first — needed for recurring client auto-calc)
   const mcCancellations = db.prepare(`
@@ -276,13 +273,10 @@ router.get('/monthly', (req, res) => {
       ? Math.round(avgRge * stretchHours * billingRate * daysInMonth)
       : null
 
-    // Fallback to webhook events if no manual summary
-    const mcRev = db.prepare(`
-      SELECT COALESCE(SUM(amount),0) AS total FROM maidcentral_events
-      WHERE event_type='revenue' AND event_date BETWEEN ? AND ?
-    `).get(monthStart, monthEnd)
-
-    const revenue = ms?.revenue > 0 ? ms.revenue : mcRev.total
+    // Revenue priority: invoice_revenue > manual revenue > 0
+    const revenue = (ms?.invoice_revenue > 0)
+      ? ms.invoice_revenue
+      : (ms?.revenue > 0 ? ms.revenue : 0)
 
     // Lead counts from lead_records take priority over monthly_sales
     const mlc = db.prepare(`
@@ -357,10 +351,10 @@ router.get('/economics', (req, res) => {
   const settings = db.prepare('SELECT key, value FROM settings').all()
   const cfg = Object.fromEntries(settings.map(s => [s.key, s.value]))
 
-  // YTD monthly_sales aggregates
+  // YTD monthly_sales aggregates — prefer invoice_revenue per month when available
   const ytdSales = db.prepare(`
     SELECT
-      COALESCE(SUM(revenue), 0)          AS revenue,
+      COALESCE(SUM(CASE WHEN invoice_revenue > 0 THEN invoice_revenue ELSE revenue END), 0) AS revenue,
       COALESCE(SUM(marketing_spend), 0)  AS marketing_spend,
       COALESCE(SUM(leads_in), 0)         AS leads_in,
       COALESCE(SUM(leads_closed), 0)     AS leads_closed,

@@ -171,6 +171,36 @@ router.post('/maidcentral', (req, res) => {
 
   const eDate = event_date ?? date ?? new Date().toISOString().split('T')[0]
 
+  // invoice_created: dedup by invoice_id, skip generic maidcentral_events insert below
+  if (event_type === 'invoice_created') {
+    const invoiceId   = payload.invoice_id ?? null
+    const tipAmount   = parseFloat(payload.tip_amount ?? payload.tip ?? 0) || 0
+    const grossAmount = parseFloat(amount ?? 0)
+    const netAmount   = Math.max(0, grossAmount - tipAmount)
+    const month       = eDate.slice(0, 7)
+
+    // Store individual invoice — INSERT OR IGNORE deduplicates by invoice_id
+    const inserted = db.prepare(`
+      INSERT OR IGNORE INTO maidcentral_events (event_type, client_id, amount, event_date, external_id, raw_payload)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run('invoice_created', client_id ?? null, netAmount, eDate, invoiceId, JSON.stringify(payload))
+
+    if (inserted.changes > 0) {
+      // Recompute the full month's invoice total and set it on monthly_sales
+      const monthTotal = db.prepare(`
+        SELECT COALESCE(SUM(amount), 0) AS total
+        FROM maidcentral_events WHERE event_type='invoice_created'
+          AND event_date BETWEEN ? AND ?
+      `).get(`${month}-01`, `${month}-31`)
+      db.prepare(`
+        INSERT INTO monthly_sales (month, invoice_revenue) VALUES (?, ?)
+        ON CONFLICT(month) DO UPDATE SET invoice_revenue = excluded.invoice_revenue, updated_at = datetime('now')
+      `).run(month, monthTotal.total)
+    }
+
+    return res.json({ ok: true, net_amount: netAmount, duplicate: inserted.changes === 0 })
+  }
+
   db.prepare(`
     INSERT INTO maidcentral_events (event_type, client_id, amount, event_date, raw_payload)
     VALUES (?, ?, ?, ?, ?)

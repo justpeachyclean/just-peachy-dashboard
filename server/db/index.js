@@ -113,6 +113,10 @@ const migrations = [
     external_id       TEXT UNIQUE,
     created_at        TEXT DEFAULT (datetime('now'))
   )`,
+  // Invoice-based revenue tracking (excludes tips, deduped by invoice_id)
+  `ALTER TABLE maidcentral_events ADD COLUMN external_id TEXT`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS idx_mc_events_external ON maidcentral_events(external_id) WHERE external_id IS NOT NULL`,
+  `ALTER TABLE monthly_sales ADD COLUMN invoice_revenue REAL`,
 ]
 for (const sql of migrations) {
   try { db.exec(sql) } catch (_) { /* column already exists — safe to ignore */ }

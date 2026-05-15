@@ -171,6 +171,19 @@ router.post('/maidcentral', (req, res) => {
 
   const eDate = event_date ?? date ?? new Date().toISOString().split('T')[0]
 
+  // revenue_override: directly set invoice_revenue for a month (bypasses event accumulation)
+  // POST { event_type: "revenue_override", amount: 57304.94, event_date: "2026-05-14" }
+  if (event_type === 'revenue_override') {
+    const month  = eDate.slice(0, 7)
+    const newRev = parseFloat(amount ?? 0)
+    if (isNaN(newRev) || newRev < 0) return res.status(400).json({ error: 'valid amount required' })
+    db.prepare(`
+      INSERT INTO monthly_sales (month, invoice_revenue) VALUES (?, ?)
+      ON CONFLICT(month) DO UPDATE SET invoice_revenue = excluded.invoice_revenue, updated_at = datetime('now')
+    `).run(month, newRev)
+    return res.json({ ok: true, month, invoice_revenue: newRev })
+  }
+
   // invoice_created: dedup by invoice_id, skip generic maidcentral_events insert below
   if (event_type === 'invoice_created') {
     const invoiceId   = payload.invoice_id ?? null
@@ -178,6 +191,11 @@ router.post('/maidcentral', (req, res) => {
     const grossAmount = parseFloat(amount ?? 0)
     const netAmount   = Math.max(0, grossAmount - tipAmount)
     const month       = eDate.slice(0, 7)
+
+    // Require invoice_id for dedup — reject events without one to prevent accumulation bugs
+    if (!invoiceId) {
+      return res.status(400).json({ error: 'invoice_id required for invoice_created events' })
+    }
 
     // Store individual invoice — INSERT OR IGNORE deduplicates by invoice_id
     const inserted = db.prepare(`
@@ -214,12 +232,9 @@ router.post('/maidcentral', (req, res) => {
 
   const month = eDate.slice(0, 7)
 
-  if (event_type === 'job_completed' && amount != null) {
-    db.prepare(`
-      INSERT INTO monthly_sales (month, revenue) VALUES (?, ?)
-      ON CONFLICT(month) DO UPDATE SET revenue = revenue + excluded.revenue, updated_at = datetime('now')
-    `).run(month, parseFloat(amount))
-  }
+  // job_completed: MC sends "Customer Total Revenue" (cumulative lifetime), NOT per-job invoice.
+  // Accumulating it causes massive revenue inflation. Intentionally a no-op — use
+  // revenue_override or the Sales & Leads manual form to set monthly revenue instead.
 
   if (event_type === 'recurring_client_snapshot' && client_count != null) {
     const snapCount = parseInt(client_count)

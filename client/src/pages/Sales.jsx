@@ -253,7 +253,7 @@ export default function Sales() {
                 <th className="text-right py-2 px-2 font-medium">Cancels</th>
                 <th className="text-right py-2 px-2 font-medium">Skips</th>
                 <th className="text-right py-2 px-2 font-medium">Complaints</th>
-                <th className="text-right py-2 pl-2 font-medium">Revenue</th>
+                <th className="text-right py-2 pl-2 font-medium">Revenue<br/><span className="text-gray-400 normal-case font-normal text-[10px]">excl. tips</span></th>
                 <th className="py-2 pl-3"></th>
               </tr>
             </thead>
@@ -289,7 +289,10 @@ export default function Sales() {
                     <td className="text-right py-2.5 px-2 text-gray-700">{row.skips ?? '—'}</td>
                     <td className="text-right py-2.5 px-2 text-gray-700">{row.complaints ?? '—'}</td>
                     <td className="text-right py-2.5 pl-2 font-medium text-gray-700 whitespace-nowrap">
-                      {row.revenue > 0 ? fmt$(row.revenue) : '—'}
+                      {row.invoice_revenue > 0
+                        ? <span title="Invoice revenue (excl. tips)">{fmt$(row.invoice_revenue)}</span>
+                        : row.revenue > 0 ? <span className="text-gray-400" title="Legacy revenue">{fmt$(row.revenue)}</span>
+                        : '—'}
                     </td>
                     <td className="py-2.5 pl-3">
                       <button onClick={() => openForm(row.month)} className="text-xs text-sage hover:underline whitespace-nowrap">
@@ -354,6 +357,24 @@ export default function Sales() {
                   required
                 />
               </div>
+              {/* Invoice Revenue — primary revenue source */}
+              <div className="rounded-lg bg-green-50 border border-green-100 px-4 py-3">
+                <label className="block text-xs font-semibold text-green-700 uppercase tracking-wide mb-1">
+                  Invoice Revenue (excl. tips) — <span className="normal-case font-normal">used on Overview</span>
+                </label>
+                <div className="flex items-center gap-2">
+                  <span className="text-gray-400 text-sm">$</span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    className="form-input flex-1"
+                    placeholder="Enter MTD invoice total from MaidCentral"
+                    {...fi('invoice_revenue')}
+                  />
+                </div>
+                <p className="text-[11px] text-green-600 mt-1">Pull from MaidCentral → Reports → Invoice Revenue for the month. Excludes tips automatically when entered here.</p>
+              </div>
               <div className="grid grid-cols-2 gap-3">
                 {[
                   ['leads_in', 'Leads In'],
@@ -367,7 +388,7 @@ export default function Sales() {
                   ['skips', 'Skips'],
                   ['complaints', 'Complaints'],
                   ['recurring_clients', 'Recurring Clients (snapshot)'],
-                  ['revenue', 'Revenue ($)'],
+                  ['revenue', 'Revenue — legacy ($)'],
                   ['marketing_spend', 'Marketing Spend ($)'],
                 ].map(([field, label]) => (
                   <div key={field}>

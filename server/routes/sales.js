@@ -33,6 +33,7 @@ router.post('/', (req, res) => {
     skips,
     complaints,
     revenue,
+    invoice_revenue,
     marketing_spend,
     recurring_clients,
     move_out_cleans,
@@ -47,8 +48,8 @@ router.post('/', (req, res) => {
     INSERT INTO monthly_sales
       (month, rep_name, leads_in, leads_quoted, leads_closed, recurring_closed,
        initial_cleans, retained, cancellations, skips, complaints,
-       revenue, marketing_spend, recurring_clients, move_out_cleans, notes, updated_at)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,datetime('now'))
+       revenue, invoice_revenue, marketing_spend, recurring_clients, move_out_cleans, notes, updated_at)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,datetime('now'))
     ON CONFLICT(month) DO UPDATE SET
       rep_name          = COALESCE(excluded.rep_name,          rep_name),
       leads_in          = COALESCE(excluded.leads_in,          leads_in),
@@ -61,6 +62,7 @@ router.post('/', (req, res) => {
       skips             = COALESCE(excluded.skips,             skips),
       complaints        = COALESCE(excluded.complaints,        complaints),
       revenue           = COALESCE(excluded.revenue,           revenue),
+      invoice_revenue   = COALESCE(excluded.invoice_revenue,   invoice_revenue),
       marketing_spend   = COALESCE(excluded.marketing_spend,   marketing_spend),
       recurring_clients = COALESCE(excluded.recurring_clients, recurring_clients),
       move_out_cleans   = COALESCE(excluded.move_out_cleans,   move_out_cleans),
@@ -70,7 +72,8 @@ router.post('/', (req, res) => {
     month, rep_name ?? null,
     leads_in ?? null, leads_quoted ?? null, leads_closed ?? null, recurring_closed ?? null,
     initial_cleans ?? null, retained ?? null, cancellations ?? null, skips ?? null, complaints ?? null,
-    revenue ?? null, marketing_spend ?? null, recurring_clients ?? null, move_out_cleans ?? null, notes ?? null
+    revenue ?? null, invoice_revenue ?? null, marketing_spend ?? null, recurring_clients ?? null,
+    move_out_cleans ?? null, notes ?? null
   )
 
   db.prepare(

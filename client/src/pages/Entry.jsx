@@ -87,7 +87,7 @@ export default function Entry() {
       <div className="card mb-5 border border-blue-100 bg-blue-50/40">
         <h3 className="text-xs font-semibold text-blue-700 mb-2">📋 What's automated vs. what you enter here</h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-1 text-[11px]">
-          <span className="text-green-600">🤖 Revenue ← auto via MaidCentral</span>
+          <span className="text-amber-600">✏️ Revenue → Sales &amp; Leads → Edit Month (MC invoice total)</span>
           <span className="text-blue-600">✏️ New hires / quit / fired → here (daily)</span>
           <span className="text-green-600">🤖 Leads, quotes, closes ← auto via GHL</span>
           <span className="text-blue-600">✏️ Call-ins / absences → here (daily)</span>

@@ -382,8 +382,9 @@ router.patch('/cancellation-update', (req, res) => {
     WHERE id = ?
   `).run(
     cancel_date ?? null,
-    codeToUse, codeToUse, label,
-    codeToUse, category,
+    codeToUse, codeToUse,          // reason_code: WHEN condition, THEN value
+    codeToUse, label,              // reason_label: WHEN condition, THEN value
+    codeToUse, category,           // reason_category: WHEN condition, THEN value
     techValue,
     last_cleaner ?? null,
     lastCleanVal,

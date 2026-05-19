@@ -209,6 +209,24 @@ function CancelRow({ row: r, onSaved, onDeleted }) {
               />
             </div>
             <div>
+              <label className="form-label text-xs">Last Cleaner</label>
+              <input
+                className="form-input py-1 text-sm"
+                defaultValue={r.last_cleaner || ''}
+                placeholder="Last cleaner before cancel…"
+                onChange={e => set('last_cleaner', e.target.value || null)}
+              />
+            </div>
+            <div>
+              <label className="form-label text-xs">Last Clean Date</label>
+              <input
+                type="date"
+                className="form-input py-1 text-sm"
+                defaultValue={r.last_clean_date || ''}
+                onChange={e => set('last_clean_date', e.target.value || null)}
+              />
+            </div>
+            <div>
               <label className="form-label text-xs">Frequency</label>
               <select
                 className="form-input py-1 text-sm"
@@ -287,6 +305,7 @@ const BLANK = {
   reason_code:'', client_quote:'', save_attempted: false,
   save_outcome:'Lost', solution_offered:'', technician:'', frequency:'',
   recurring_months:'', price_per_visit:'', notes:'',
+  last_cleaner:'', last_clean_date:'',
 }
 
 export default function CancelledClients() {
@@ -429,8 +448,16 @@ export default function CancelledClients() {
                 <input className="form-input" value={form.solution_offered} onChange={e => set('solution_offered', e.target.value)} placeholder="Tech swap / Reclean / Price explanation…" />
               </div>
               <div>
-                <label className="form-label">Technician</label>
+                <label className="form-label">Technician (Assigned Cleaner)</label>
                 <input className="form-input" value={form.technician} onChange={e => set('technician', e.target.value)} placeholder="Assigned tech name…" />
+              </div>
+              <div>
+                <label className="form-label">Last Cleaner</label>
+                <input className="form-input" value={form.last_cleaner || ''} onChange={e => set('last_cleaner', e.target.value)} placeholder="Last cleaner before cancel…" />
+              </div>
+              <div>
+                <label className="form-label">Last Clean Date</label>
+                <input type="date" className="form-input" value={form.last_clean_date || ''} onChange={e => set('last_clean_date', e.target.value)} />
               </div>
               <div>
                 <label className="form-label">Price Per Visit ($)</label>

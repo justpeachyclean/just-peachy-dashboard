@@ -128,6 +128,7 @@ router.patch('/:id', (req, res) => {
     reason_code, client_quote, save_attempted, save_outcome,
     solution_offered, frequency, recurring_months, revenue_lost_monthly, notes,
     price_per_visit, annual_value_lost, technician,
+    last_cleaner, last_clean_date,
   } = req.body
 
   const { label, category } = resolveCode(reason_code)
@@ -147,7 +148,9 @@ router.patch('/:id', (req, res) => {
       notes                = COALESCE(?, notes),
       price_per_visit      = COALESCE(?, price_per_visit),
       annual_value_lost    = COALESCE(?, annual_value_lost),
-      technician           = COALESCE(?, technician)
+      technician           = COALESCE(?, technician),
+      last_cleaner         = COALESCE(?, last_cleaner),
+      last_clean_date      = COALESCE(?, last_clean_date)
     WHERE id = ?
   `).run(
     reason_code ?? null,
@@ -164,6 +167,8 @@ router.patch('/:id', (req, res) => {
     price_per_visit !== undefined ? parseFloat(price_per_visit) || null : null,
     annual_value_lost !== undefined ? parseFloat(annual_value_lost) || null : null,
     technician ?? null,
+    last_cleaner ?? null,
+    last_clean_date ?? null,
     req.params.id
   )
 

@@ -268,10 +268,14 @@ router.post('/cancellation', (req, res) => {
     client_id, client_name, cancel_date, reason_code,
     client_quote, save_attempted, save_outcome, solution_offered,
     frequency, recurring_months, revenue_lost_monthly,
-    price_per_visit,  // optional — auto-calculates annual_value_lost if provided
+    price_per_visit,
     tech_name, technician,  // assigned technician (MC may send either field name)
+    last_cleaner, last_clean_date, last_clean,  // last service info
+    mc_client_id,  // MC's own ID for deduplication
   } = payload
-  const techValue = technician || tech_name || null
+  const techValue    = technician || tech_name || null
+  const lastCleanVal = last_clean_date || last_clean || null
+  const mcIdVal      = mc_client_id || client_id || null
 
   const date = cancel_date || new Date().toISOString().split('T')[0]
   const { label, category } = resolveCode(reason_code)
@@ -283,13 +287,13 @@ router.post('/cancellation', (req, res) => {
 
   const result = db.prepare(`
     INSERT INTO cancelled_clients
-      (client_id, client_name, cancel_date, reason_code, reason_label, reason_category,
+      (client_id, mc_client_id, client_name, cancel_date, reason_code, reason_label, reason_category,
        client_quote, save_attempted, save_outcome, solution_offered,
        frequency, recurring_months, revenue_lost_monthly, price_per_visit, annual_value_lost,
-       technician, source, raw_payload)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'webhook',?)
+       technician, last_cleaner, last_clean_date, source, raw_payload)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'webhook',?)
   `).run(
-    client_id ?? null, client_name ?? null, date,
+    mcIdVal, mcIdVal, client_name ?? null, date,
     reason_code ?? null, label, category,
     client_quote ?? null,
     save_attempted ? 1 : 0,
@@ -300,6 +304,8 @@ router.post('/cancellation', (req, res) => {
     price_per_visit ? parseFloat(price_per_visit) : null,
     annualValueLost,
     techValue,
+    last_cleaner ?? null,
+    lastCleanVal,
     JSON.stringify(payload)
   )
 
@@ -327,6 +333,73 @@ router.post('/cancellation', (req, res) => {
   }
 
   res.json({ ok: true, id: result.lastInsertRowid })
+})
+
+// PATCH /api/webhook/cancellation-update  — Zap 2: Google Sheet row updated → sync detail fields
+// Matches on client_name (case-insensitive); updates most-recent matching record
+// Fields: technician (Assigned Cleaner), reason_code, reason_label, price_per_visit (Revenue),
+//         last_cleaner, last_clean_date, cancel_date (Date from sheet)
+router.patch('/cancellation-update', (req, res) => {
+  if (!verifySecret(req, res)) return
+
+  const {
+    client_name, cancel_date,
+    technician, assigned_cleaner,
+    reason_code, reason,
+    price_per_visit, revenue,
+    last_cleaner, last_clean_date, last_clean,
+    frequency,
+  } = req.body
+
+  if (!client_name) return res.status(400).json({ error: 'client_name required' })
+
+  const techValue     = technician || assigned_cleaner || null
+  const priceValue    = price_per_visit || revenue || null
+  const lastCleanVal  = last_clean_date || last_clean || null
+  const codeToUse     = reason_code || null
+  const { label, category } = resolveCode(codeToUse)
+
+  // Find the most recent matching record
+  const existing = db.prepare(`
+    SELECT id, cancel_date FROM cancelled_clients
+    WHERE LOWER(TRIM(client_name)) = LOWER(TRIM(?))
+    ORDER BY id DESC LIMIT 1
+  `).get(client_name)
+
+  if (!existing) return res.status(404).json({ error: 'No matching cancellation record found', client_name })
+
+  db.prepare(`
+    UPDATE cancelled_clients SET
+      cancel_date          = COALESCE(?, cancel_date),
+      reason_code          = CASE WHEN ? IS NOT NULL THEN ? ELSE reason_code END,
+      reason_label         = CASE WHEN ? IS NOT NULL THEN ? ELSE reason_label END,
+      reason_category      = CASE WHEN ? IS NOT NULL THEN ? ELSE reason_category END,
+      technician           = COALESCE(?, technician),
+      last_cleaner         = COALESCE(?, last_cleaner),
+      last_clean_date      = COALESCE(?, last_clean_date),
+      price_per_visit      = COALESCE(?, price_per_visit),
+      frequency            = COALESCE(?, frequency)
+    WHERE id = ?
+  `).run(
+    cancel_date ?? null,
+    codeToUse, codeToUse, label,
+    codeToUse, category,
+    techValue,
+    last_cleaner ?? null,
+    lastCleanVal,
+    priceValue ? parseFloat(priceValue) : null,
+    frequency ?? null,
+    existing.id
+  )
+
+  // Recalculate annual value if price changed
+  if (priceValue) {
+    const row = db.prepare('SELECT price_per_visit, frequency, annual_value_lost FROM cancelled_clients WHERE id=?').get(existing.id)
+    const annual = calcAnnualFromPrice(row.price_per_visit, row.frequency)
+    if (annual) db.prepare('UPDATE cancelled_clients SET annual_value_lost=? WHERE id=?').run(annual, existing.id)
+  }
+
+  res.json({ ok: true, id: existing.id, client_name })
 })
 
 // POST /api/webhook/feedback  — MC review / scorecard / survey

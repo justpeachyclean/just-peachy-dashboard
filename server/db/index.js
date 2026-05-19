@@ -119,6 +119,11 @@ const migrations = [
   `ALTER TABLE monthly_sales ADD COLUMN invoice_revenue REAL`,
   // Technician assigned to client — for spotting service-quality cancellation patterns
   `ALTER TABLE cancelled_clients ADD COLUMN technician TEXT`,
+  // Last cleaner who serviced the client before cancellation + date of that clean
+  `ALTER TABLE cancelled_clients ADD COLUMN last_cleaner TEXT`,
+  `ALTER TABLE cancelled_clients ADD COLUMN last_clean_date TEXT`,
+  // MC client ID for deduplication
+  `ALTER TABLE cancelled_clients ADD COLUMN mc_client_id TEXT`,
 ]
 for (const sql of migrations) {
   try { db.exec(sql) } catch (_) { /* column already exists — safe to ignore */ }

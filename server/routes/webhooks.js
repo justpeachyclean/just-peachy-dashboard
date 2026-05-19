@@ -269,7 +269,9 @@ router.post('/cancellation', (req, res) => {
     client_quote, save_attempted, save_outcome, solution_offered,
     frequency, recurring_months, revenue_lost_monthly,
     price_per_visit,  // optional — auto-calculates annual_value_lost if provided
+    tech_name, technician,  // assigned technician (MC may send either field name)
   } = payload
+  const techValue = technician || tech_name || null
 
   const date = cancel_date || new Date().toISOString().split('T')[0]
   const { label, category } = resolveCode(reason_code)
@@ -283,8 +285,9 @@ router.post('/cancellation', (req, res) => {
     INSERT INTO cancelled_clients
       (client_id, client_name, cancel_date, reason_code, reason_label, reason_category,
        client_quote, save_attempted, save_outcome, solution_offered,
-       frequency, recurring_months, revenue_lost_monthly, price_per_visit, annual_value_lost, source, raw_payload)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'webhook',?)
+       frequency, recurring_months, revenue_lost_monthly, price_per_visit, annual_value_lost,
+       technician, source, raw_payload)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'webhook',?)
   `).run(
     client_id ?? null, client_name ?? null, date,
     reason_code ?? null, label, category,
@@ -296,6 +299,7 @@ router.post('/cancellation', (req, res) => {
     revenue_lost_monthly ? parseFloat(revenue_lost_monthly) : null,
     price_per_visit ? parseFloat(price_per_visit) : null,
     annualValueLost,
+    techValue,
     JSON.stringify(payload)
   )
 

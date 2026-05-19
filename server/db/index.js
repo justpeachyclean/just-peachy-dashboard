@@ -124,6 +124,25 @@ for (const sql of migrations) {
   try { db.exec(sql) } catch (_) { /* column already exists — safe to ignore */ }
 }
 
+// Backfill technician from raw_payload for webhook-sourced cancellation records
+// MC may send tech_name or technician in the payload — check both
+try {
+  db.exec(`
+    UPDATE cancelled_clients
+    SET technician = COALESCE(
+      json_extract(raw_payload, '$.technician'),
+      json_extract(raw_payload, '$.tech_name')
+    )
+    WHERE source = 'webhook'
+      AND raw_payload IS NOT NULL
+      AND technician IS NULL
+      AND (
+        json_extract(raw_payload, '$.technician') IS NOT NULL
+        OR json_extract(raw_payload, '$.tech_name') IS NOT NULL
+      )
+  `)
+} catch (_) { /* json_extract may not be available in very old SQLite — safe to skip */ }
+
 // Backfill welcome_call & otc_24hr_call for clients who only have the old 5-stage timeline
 try {
   const INTERVAL = { weekly:7, biweekly:14, 'bi-weekly':14, monthly:28, 'every 4 weeks':28, 'tri-weekly':10 }

@@ -204,4 +204,31 @@ router.get('/codes', (req, res) => {
   res.json(CODES)
 })
 
+// POST /api/cancellations/bulk-tech  — backfill technician names from a client→tech mapping
+// Body: { mappings: [{ client_name: "Jane Doe", technician: "Alex" }, ...] }
+// Matches case-insensitively on client_name; only updates rows where technician IS NULL
+router.post('/bulk-tech', (req, res) => {
+  const { mappings, overwrite = false } = req.body
+  if (!Array.isArray(mappings) || mappings.length === 0) {
+    return res.status(400).json({ error: 'mappings array required' })
+  }
+
+  const stmt = overwrite
+    ? db.prepare(`UPDATE cancelled_clients SET technician = ? WHERE LOWER(TRIM(client_name)) = LOWER(TRIM(?))`)
+    : db.prepare(`UPDATE cancelled_clients SET technician = ? WHERE LOWER(TRIM(client_name)) = LOWER(TRIM(?)) AND technician IS NULL`)
+
+  let updated = 0
+  const bulkUpdate = db.transaction((maps) => {
+    for (const { client_name, technician } of maps) {
+      if (!client_name || !technician) continue
+      const info = stmt.run(technician, client_name)
+      updated += info.changes
+    }
+  })
+  bulkUpdate(mappings)
+
+  audit(req, 'bulk_tech_backfill', `${updated} records updated from ${mappings.length} mappings`)
+  res.json({ ok: true, updated, submitted: mappings.length })
+})
+
 module.exports = router

@@ -366,7 +366,7 @@ router.patch('/cancellation-update', (req, res) => {
     ORDER BY id DESC LIMIT 1
   `).get(client_name)
 
-  if (!existing) return res.status(404).json({ error: 'No matching cancellation record found', client_name })
+  if (!existing) return res.status(200).json({ ok: false, skipped: true, reason: 'no_record', client_name })
 
   db.prepare(`
     UPDATE cancelled_clients SET

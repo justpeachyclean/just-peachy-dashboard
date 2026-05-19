@@ -335,11 +335,12 @@ router.post('/cancellation', (req, res) => {
   res.json({ ok: true, id: result.lastInsertRowid })
 })
 
-// PATCH /api/webhook/cancellation-update  — Zap 2: Google Sheet row updated → sync detail fields
+// POST|PATCH /api/webhook/cancellation-update  — Zap 2: Google Sheet row updated → sync detail fields
 // Matches on client_name (case-insensitive); updates most-recent matching record
 // Fields: technician (Assigned Cleaner), reason_code, reason_label, price_per_visit (Revenue),
 //         last_cleaner, last_clean_date, cancel_date (Date from sheet)
-router.patch('/cancellation-update', (req, res) => {
+// Accepts both POST (Zapier Webhooks default) and PATCH
+function handleCancellationUpdate(req, res) {
   if (!verifySecret(req, res)) return
 
   const {
@@ -401,7 +402,9 @@ router.patch('/cancellation-update', (req, res) => {
   }
 
   res.json({ ok: true, id: existing.id, client_name })
-})
+}
+router.post('/cancellation-update', handleCancellationUpdate)
+router.patch('/cancellation-update', handleCancellationUpdate)
 
 // POST /api/webhook/feedback  — MC review / scorecard / survey
 router.post('/feedback', (req, res) => {

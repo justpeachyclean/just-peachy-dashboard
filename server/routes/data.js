@@ -61,7 +61,9 @@ router.get('/summary', (req, res) => {
   let recurringClientsEstimated = true
 
   if (currentMonthSnap != null) {
+    // User explicitly set the count for this month — treat as exact, no deltas
     baselineClients = currentMonthSnap
+    recurringClientsEstimated = false
   } else if (priorBaseline) {
     // Add closes & cancellations for all complete months between baseline and now
     const pastChanges = db.prepare(`
@@ -98,7 +100,7 @@ router.get('/summary', (req, res) => {
   const initialCleansWithOutcome = leadCounts.initial_cleans_with_outcome ?? 0
   const initialToRecurring       = leadCounts.initial_to_recurring  ?? 0
 
-  // Apply this month's live deltas: new recurring closes − cancellations
+  // When no explicit snapshot is set, estimate by applying this month's live deltas
   const newClosesThisMonth = recurringClosed > 0 ? recurringClosed : leadsClosed
   const recurringClients = recurringClientsEstimated
     ? baselineClients + newClosesThisMonth - cancellations

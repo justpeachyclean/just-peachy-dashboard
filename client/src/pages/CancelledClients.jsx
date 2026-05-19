@@ -552,6 +552,29 @@ export default function CancelledClients() {
         </div>
       </div>
 
+      {/* By Technician */}
+      <div className="card mb-6">
+        <h2 className="text-sm font-semibold text-sage uppercase tracking-wider mb-4">By Technician</h2>
+        {Object.keys(stats.by_technician || {}).length === 0
+          ? <p className="text-sm text-gray-400 text-center py-6">No technicians recorded yet — add a tech name when logging or editing cancellations.</p>
+          : (() => {
+              const techMax = Math.max(1, ...Object.values(stats.by_technician))
+              return Object.entries(stats.by_technician)
+                .sort(([,a],[,b]) => b - a)
+                .map(([tech, count]) => (
+                  <BarRow
+                    key={tech}
+                    label={tech}
+                    value={count}
+                    max={techMax}
+                    color="bg-brand/60"
+                    extra={stats.total > 0 ? `${Math.round((count / stats.total) * 100)}%` : null}
+                  />
+                ))
+            })()
+        }
+      </div>
+
       {/* Full table */}
       <div className="card">
         <div className="flex items-center justify-between mb-4">

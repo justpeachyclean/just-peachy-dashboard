@@ -19,6 +19,7 @@ router.get('/', (req, res) => {
 
   const byCategory = {}
   const byCode = {}
+  const byTechnician = {}
   let totalLost = 0, totalSaved = 0, totalPaused = 0
   let revenueLost = 0, annualLost = 0
 
@@ -41,6 +42,7 @@ router.get('/', (req, res) => {
     const cat = r.reason_category || 'Unknown'
     byCategory[cat] = (byCategory[cat] || 0) + 1
     if (r.reason_code) byCode[r.reason_code] = (byCode[r.reason_code] || 0) + 1
+    if (r.technician)  byTechnician[r.technician] = (byTechnician[r.technician] || 0) + 1
     if (r.save_outcome === 'Lost') totalLost++
     else if (r.save_outcome === 'Saved') totalSaved++
     else if (r.save_outcome === 'Paused') totalPaused++
@@ -60,6 +62,7 @@ router.get('/', (req, res) => {
       annual_value_lost: Math.round(annualLost),
       by_category: byCategory,
       by_code: byCode,
+      by_technician: byTechnician,
     },
   })
 })

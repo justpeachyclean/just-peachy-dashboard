@@ -49,6 +49,7 @@ export default function BonusTracker() {
   const [reps, setReps] = useState([])
   const [records, setRecords] = useState([])
   const [calendar, setCalendar] = useState([])
+  const [qualifyingSales, setQualifyingSales] = useState([])
   const [year, setYear] = useState(currentYear())
   const [error, setError] = useState(null)
 
@@ -82,7 +83,15 @@ export default function BonusTracker() {
       .catch(setError)
   }
 
+  const loadQualifying = (month) => {
+    apiFetch(`/api/bonus/qualifying-sales?month=${month}`)
+      .then(r => r.json())
+      .then(setQualifyingSales)
+      .catch(() => setQualifyingSales([]))
+  }
+
   useEffect(() => { loadAll() }, [year])
+  useEffect(() => { loadQualifying(autoCalcMonth) }, [autoCalcMonth])
 
   // Build months array for table header
   const months = Array.from({ length: 12 }, (_, i) => {
@@ -433,6 +442,69 @@ export default function BonusTracker() {
           </div>
         )}
       </div>
+
+      {/* Qualifying sales list for the selected calc month */}
+      {qualifyingSales.length > 0 && (() => {
+        // Group by rep
+        const byRep = {}
+        for (const s of qualifyingSales) {
+          const rep = s.rep_name || 'Unassigned'
+          if (!byRep[rep]) byRep[rep] = []
+          byRep[rep].push(s)
+        }
+        return (
+          <div className="card mb-5">
+            <div className="flex items-center justify-between mb-3 pb-2 border-b border-gray-100">
+              <div>
+                <h2 className="font-semibold text-ink">Qualifying Sales — {monthLabel(autoCalcMonth)}</h2>
+                <p className="text-xs text-gray-400 mt-0.5">Recurring closes for the month · cancelled same month = disqualified from bonus</p>
+              </div>
+              <div className="flex gap-3 text-xs text-gray-400">
+                <span><span className="inline-block w-2 h-2 rounded-full bg-ok mr-1" />Qualifies</span>
+                <span><span className="inline-block w-2 h-2 rounded-full bg-danger mr-1" />Disqualified</span>
+              </div>
+            </div>
+            <div className="space-y-4">
+              {Object.entries(byRep).map(([repName, sales]) => {
+                const qualifying = sales.filter(s => !s.disqualified)
+                const disqualified = sales.filter(s => s.disqualified)
+                return (
+                  <div key={repName}>
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="text-sm font-semibold text-ink">{repName}</span>
+                      <span className="text-xs text-gray-400">
+                        {qualifying.length} qualifying
+                        {disqualified.length > 0 && <span className="text-danger ml-1">· {disqualified.length} disqualified</span>}
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                      {sales.map(s => (
+                        <div
+                          key={s.id}
+                          className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-sm ${
+                            s.disqualified
+                              ? 'bg-red-50 border-red-100'
+                              : 'bg-green-50/50 border-green-100'
+                          }`}
+                        >
+                          <span className={`w-2 h-2 rounded-full shrink-0 ${s.disqualified ? 'bg-danger' : 'bg-ok'}`} />
+                          <span className={`flex-1 font-medium ${s.disqualified ? 'line-through text-gray-400' : 'text-ink'}`}>
+                            {s.client_name || 'Unknown'}
+                          </span>
+                          <span className="text-xs text-gray-400 capitalize shrink-0">{s.frequency || '—'}</span>
+                          {s.disqualified && (
+                            <span className="text-xs text-danger font-semibold shrink-0" title={`Cancelled ${s.cancel_date}`}>✕</span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )
+      })()}
 
       {/* Inactive reps */}
       {reps.filter(r => !r.active).length > 0 && (

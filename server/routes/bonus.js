@@ -147,23 +147,88 @@ router.patch('/records/pay', (req, res) => {
   res.json({ ok: true })
 })
 
+// GET /api/bonus/qualifying-sales?month=YYYY-MM
+// Returns all recurring leads for a month with a disqualified flag for same-month cancellations
+router.get('/qualifying-sales', (req, res) => {
+  const now = new Date()
+  const month = req.query.month || `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+  const [year, mon] = month.split('-')
+  const monthStart = `${year}-${mon}-01`
+  const monthEnd   = `${year}-${mon}-31`
+
+  const leads = db.prepare(`
+    SELECT id, client_name, frequency, rep_name, record_date, initial_clean_price, price_per_clean
+    FROM lead_records
+    WHERE month = ? AND recurring_retained = 1
+    ORDER BY rep_name COLLATE NOCASE, record_date
+  `).all(month)
+
+  // Clients who cancelled in the same month (and weren't saved)
+  const cancelled = db.prepare(`
+    SELECT client_name, cancel_date FROM cancelled_clients
+    WHERE cancel_date BETWEEN ? AND ?
+      AND (save_outcome IS NULL OR save_outcome != 'Saved')
+  `).all(monthStart, monthEnd)
+
+  const cancelMap = {}
+  for (const c of cancelled) {
+    const key = (c.client_name || '').toLowerCase().trim()
+    cancelMap[key] = c.cancel_date
+  }
+
+  const enriched = leads.map(l => {
+    const key = (l.client_name || '').toLowerCase().trim()
+    const cancelDate = cancelMap[key] ?? null
+    return { ...l, disqualified: !!cancelDate, cancel_date: cancelDate }
+  })
+
+  res.json(enriched)
+})
+
 // POST /api/bonus/auto-calculate  — calculate bonus records for all active reps from lead_records
 router.post('/auto-calculate', (req, res) => {
   const { month } = req.body
   if (!month) return res.status(400).json({ error: 'month required' })
 
+  const [year, mon] = month.split('-')
+  const monthStart = `${year}-${mon}-01`
+  const monthEnd   = `${year}-${mon}-31`
+
+  // Names of recurring clients who cancelled (and weren't saved) within the same month
+  const cancelledThisMonth = db.prepare(`
+    SELECT LOWER(TRIM(client_name)) AS name FROM cancelled_clients
+    WHERE cancel_date BETWEEN ? AND ?
+      AND (save_outcome IS NULL OR save_outcome != 'Saved')
+  `).all(monthStart, monthEnd).map(r => r.name)
+  const cancelledSet = new Set(cancelledThisMonth)
+
   const reps = db.prepare('SELECT * FROM sales_reps WHERE active=1').all()
   const results = []
 
   for (const rep of reps) {
-    const counts = db.prepare(`
-      SELECT
-        COUNT(CASE WHEN price_per_clean IS NOT NULL OR quote_amount IS NOT NULL THEN 1 END) AS quotes_given,
-        COUNT(CASE WHEN converted=1 THEN 1 END) AS closed_sales,
-        COUNT(CASE WHEN converted=1 AND frequency NOT IN ('one_type','one-time','one time','') THEN 1 END) AS recurring_closed,
-        COUNT(CASE WHEN converted=1 AND LOWER(frequency) IN ('weekly','biweekly','bi-weekly') THEN 1 END) AS weekly_biweekly_closed
+    // Get all leads for this rep/month, then filter out same-month cancellations
+    const leads = db.prepare(`
+      SELECT client_name, converted, recurring_retained, frequency,
+             price_per_clean, quote_amount
       FROM lead_records WHERE month = ? AND rep_name = ? COLLATE NOCASE
-    `).get(month, rep.name)
+    `).all(month, rep.name)
+
+    let quotes_given = 0, closed_sales = 0, recurring_closed = 0, weekly_biweekly_closed = 0
+    for (const l of leads) {
+      if (l.price_per_clean != null || l.quote_amount != null) quotes_given++
+      if (!l.converted) continue
+      const nameKey = (l.client_name || '').toLowerCase().trim()
+      const isRecurring = l.frequency && !['one_type','one-time','one time',''].includes(l.frequency.toLowerCase())
+      // If recurring client cancelled same month → disqualified from bonus entirely
+      if (isRecurring && cancelledSet.has(nameKey)) continue
+      closed_sales++
+      if (isRecurring) {
+        recurring_closed++
+        if (['weekly','biweekly','bi-weekly'].includes((l.frequency || '').toLowerCase())) weekly_biweekly_closed++
+      }
+    }
+
+    const counts = { quotes_given, closed_sales, recurring_closed, weekly_biweekly_closed }
 
     if (counts.closed_sales > 0 || counts.quotes_given > 0) {
       const closeRate = counts.quotes_given > 0 ? counts.closed_sales / counts.quotes_given : 0

@@ -111,13 +111,16 @@ function CancelRow({ row: r, onSaved, onDeleted }) {
     <div className={`rounded-xl border ${open ? 'border-brand/30 bg-brand/5' : 'border-transparent hover:border-gray-100 hover:bg-gray-50/50'}`}>
       {/* Summary row */}
       <div
-        className="grid grid-cols-[90px_1fr_60px_80px_80px_24px] gap-2 px-3 py-2 cursor-pointer items-center"
+        className="grid grid-cols-[90px_1fr_90px_60px_80px_80px_24px] gap-2 px-3 py-2 cursor-pointer items-center"
         onClick={() => { setOpen(p => !p); if (!open) setEd({}) }}
       >
         <span className="text-xs text-gray-500 whitespace-nowrap">{r.cancel_date}</span>
         <span className="font-medium text-ink text-sm truncate">
           {r.client_name || <span className="text-gray-300">Unnamed</span>}
           {r.client_quote && <span className="text-xs text-gray-400 font-normal italic ml-1">"{r.client_quote}"</span>}
+        </span>
+        <span className="hidden sm:block truncate text-xs text-gray-500">
+          {(ed.technician ?? r.technician) || <span className="text-gray-300">—</span>}
         </span>
         <span>
           {displayCode
@@ -197,6 +200,15 @@ function CancelRow({ row: r, onSaved, onDeleted }) {
               />
             </div>
             <div>
+              <label className="form-label text-xs">Technician</label>
+              <input
+                className="form-input py-1 text-sm"
+                defaultValue={r.technician || ''}
+                placeholder="Assigned tech name…"
+                onChange={e => set('technician', e.target.value || null)}
+              />
+            </div>
+            <div>
               <label className="form-label text-xs">Frequency</label>
               <select
                 className="form-input py-1 text-sm"
@@ -273,7 +285,7 @@ function CancelRow({ row: r, onSaved, onDeleted }) {
 const BLANK = {
   client_name:'', cancel_date: (new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York' }).format(new Date())),
   reason_code:'', client_quote:'', save_attempted: false,
-  save_outcome:'Lost', solution_offered:'', frequency:'',
+  save_outcome:'Lost', solution_offered:'', technician:'', frequency:'',
   recurring_months:'', price_per_visit:'', notes:'',
 }
 
@@ -323,7 +335,8 @@ export default function CancelledClients() {
   const stats = data?.stats || {}
   const rows = (data?.cancellations || []).filter(r =>
     !filter || (r.client_name || '').toLowerCase().includes(filter.toLowerCase()) ||
-    (r.reason_code || '').toLowerCase().includes(filter.toLowerCase())
+    (r.reason_code || '').toLowerCase().includes(filter.toLowerCase()) ||
+    (r.technician || '').toLowerCase().includes(filter.toLowerCase())
   )
 
   const catMax = Math.max(1, ...Object.values(stats.by_category || {}))
@@ -414,6 +427,10 @@ export default function CancelledClients() {
               <div>
                 <label className="form-label">Solution Offered</label>
                 <input className="form-input" value={form.solution_offered} onChange={e => set('solution_offered', e.target.value)} placeholder="Tech swap / Reclean / Price explanation…" />
+              </div>
+              <div>
+                <label className="form-label">Technician</label>
+                <input className="form-input" value={form.technician} onChange={e => set('technician', e.target.value)} placeholder="Assigned tech name…" />
               </div>
               <div>
                 <label className="form-label">Price Per Visit ($)</label>
@@ -555,8 +572,8 @@ export default function CancelledClients() {
         ) : (
           <div className="space-y-1">
             {/* Header row */}
-            <div className="grid grid-cols-[90px_1fr_60px_80px_80px_24px] gap-2 px-3 pb-1 border-b border-gray-100 text-xs text-gray-400 uppercase font-medium tracking-wide">
-              <span>Date</span><span>Client</span><span>Code</span><span className="hidden sm:block">Outcome</span><span className="hidden md:block text-right">Rev/Mo</span><span />
+            <div className="grid grid-cols-[90px_1fr_90px_60px_80px_80px_24px] gap-2 px-3 pb-1 border-b border-gray-100 text-xs text-gray-400 uppercase font-medium tracking-wide">
+              <span>Date</span><span>Client</span><span className="hidden sm:block">Technician</span><span>Code</span><span className="hidden sm:block">Outcome</span><span className="hidden md:block text-right">Rev/Mo</span><span />
             </div>
             {rows.map(r => (
               <CancelRow key={r.id} row={r} onSaved={load} onDeleted={load} />

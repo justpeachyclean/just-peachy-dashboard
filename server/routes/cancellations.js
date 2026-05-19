@@ -70,7 +70,7 @@ router.post('/', (req, res) => {
     client_id, client_name, cancel_date, reason_code,
     client_quote, save_attempted, save_outcome, solution_offered,
     frequency, recurring_months, revenue_lost_monthly, notes,
-    price_per_visit, annual_value_lost,
+    price_per_visit, annual_value_lost, technician,
   } = req.body
 
   if (!cancel_date) return res.status(400).json({ error: 'cancel_date required' })
@@ -82,8 +82,8 @@ router.post('/', (req, res) => {
       (client_id, client_name, cancel_date, reason_code, reason_label, reason_category,
        client_quote, save_attempted, save_outcome, solution_offered,
        frequency, recurring_months, revenue_lost_monthly, notes, source,
-       price_per_visit, annual_value_lost)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,'manual',?,?)
+       price_per_visit, annual_value_lost, technician)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,'manual',?,?,?)
   `).run(
     client_id ?? null, client_name ?? null, cancel_date,
     reason_code ?? null, label, category,
@@ -95,7 +95,8 @@ router.post('/', (req, res) => {
     revenue_lost_monthly ? parseFloat(revenue_lost_monthly) : null,
     notes ?? null,
     price_per_visit ? parseFloat(price_per_visit) : null,
-    annual_value_lost ? parseFloat(annual_value_lost) : null
+    annual_value_lost ? parseFloat(annual_value_lost) : null,
+    technician ?? null
   )
 
   // Auto-add T-coded cancellations to nurture queue
@@ -123,7 +124,7 @@ router.patch('/:id', (req, res) => {
   const {
     reason_code, client_quote, save_attempted, save_outcome,
     solution_offered, frequency, recurring_months, revenue_lost_monthly, notes,
-    price_per_visit, annual_value_lost,
+    price_per_visit, annual_value_lost, technician,
   } = req.body
 
   const { label, category } = resolveCode(reason_code)
@@ -142,7 +143,8 @@ router.patch('/:id', (req, res) => {
       revenue_lost_monthly = COALESCE(?, revenue_lost_monthly),
       notes                = COALESCE(?, notes),
       price_per_visit      = COALESCE(?, price_per_visit),
-      annual_value_lost    = COALESCE(?, annual_value_lost)
+      annual_value_lost    = COALESCE(?, annual_value_lost),
+      technician           = COALESCE(?, technician)
     WHERE id = ?
   `).run(
     reason_code ?? null,
@@ -158,6 +160,7 @@ router.patch('/:id', (req, res) => {
     notes ?? null,
     price_per_visit !== undefined ? parseFloat(price_per_visit) || null : null,
     annual_value_lost !== undefined ? parseFloat(annual_value_lost) || null : null,
+    technician ?? null,
     req.params.id
   )
 

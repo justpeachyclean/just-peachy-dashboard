@@ -124,6 +124,8 @@ const migrations = [
   `ALTER TABLE cancelled_clients ADD COLUMN last_clean_date TEXT`,
   // MC client ID for deduplication
   `ALTER TABLE cancelled_clients ADD COLUMN mc_client_id TEXT`,
+  // Seed default sales rep if none exist
+  `INSERT OR IGNORE INTO sales_reps (name, active, start_date) SELECT 'Lexi Ledom', 1, '2026-01-01' WHERE NOT EXISTS (SELECT 1 FROM sales_reps WHERE LOWER(name) = 'lexi ledom')`,
 ]
 for (const sql of migrations) {
   try { db.exec(sql) } catch (_) { /* column already exists — safe to ignore */ }

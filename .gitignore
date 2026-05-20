@@ -6,3 +6,5 @@ server/node_modules/
 .env
 .DS_Store
 
+*.db-shm
+*.db-wal

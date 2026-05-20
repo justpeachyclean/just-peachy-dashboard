@@ -148,7 +148,7 @@ function FunnelStage({ label, from, to, rate, goal, stretch, showArrow = true })
 
 const BLANK_FORM = {
   record_date: new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York' }).format(new Date()),
-  rep_name: 'Lexi',
+  rep_name: 'Lexi Ledom',
   client_name: '',
   frequency: '',
   initial_clean_price: '',
@@ -164,6 +164,7 @@ const BLANK_FORM = {
 
 export default function Leads() {
   const [leads, setLeads] = useState([])
+  const [reps, setReps] = useState([])
   const [filter, setFilter] = useState({
     year: String(new Date().getFullYear()),
     month: String(new Date().getMonth() + 1).padStart(2, '0'),
@@ -199,6 +200,12 @@ export default function Leads() {
   }
 
   useEffect(() => { load() }, [filter.year, filter.month, search])
+
+  useEffect(() => {
+    apiFetch('/api/bonus/reps').then(r => r.json()).then(rows => {
+      setReps(rows.filter(r => r.active))
+    }).catch(() => {})
+  }, [])
 
   const f = v => (v ?? '').toString()
   const set = k => e => {
@@ -486,7 +493,13 @@ export default function Leads() {
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Sales Rep</label>
-                  <input type="text" className="form-input" value={f(form.rep_name)} onChange={set('rep_name')} />
+                  {reps.length > 0 ? (
+                    <select className="form-input" value={f(form.rep_name)} onChange={set('rep_name')}>
+                      {reps.map(r => <option key={r.id} value={r.name}>{r.name}</option>)}
+                    </select>
+                  ) : (
+                    <input type="text" className="form-input" value={f(form.rep_name)} onChange={set('rep_name')} />
+                  )}
                 </div>
               </div>
               <div>

@@ -122,7 +122,6 @@ export default function Sales() {
   const ytdQuoteRate = totalLeadsIn > 0 ? totalQuoted / totalLeadsIn : null
   const ytdCloseRate = totalQuoted > 0 ? totalClosed / totalQuoted : null
   const ytdRetentionRate = totalInitial > 0 ? totalRetained / totalInitial : null
-  const ytdAttritionRate = ytdRetentionRate !== null ? 1 - ytdRetentionRate : null
 
   // Annualized value: prefer real per-record averages, fall back to revenue ÷ clients
   const avgMonthlyRevPerClient = (() => {
@@ -182,10 +181,10 @@ export default function Sales() {
           color={ytdCloseRate !== null ? (ytdCloseRate >= 0.4 ? 'border-ok' : 'border-danger') : 'border-gray-200'}
         />
         <SummaryCard
-          label="Initial Attrition"
-          value={ytdAttritionRate !== null ? fmtPct(ytdAttritionRate) : '—'}
-          sub={`${totalInitial - totalRetained} of ${totalInitial} didn't convert`}
-          color={ytdAttritionRate !== null ? (ytdAttritionRate <= 0.4 ? 'border-ok' : ytdAttritionRate <= 0.6 ? 'border-warn' : 'border-danger') : 'border-gray-200'}
+          label="Initial Retention"
+          value={ytdRetentionRate !== null ? fmtPct(ytdRetentionRate) : '—'}
+          sub={`${totalRetained} of ${totalInitial} kept`}
+          color={ytdRetentionRate !== null ? (ytdRetentionRate >= 0.6 ? 'border-ok' : 'border-warn') : 'border-gray-200'}
         />
       </div>
 
@@ -250,7 +249,7 @@ export default function Sales() {
                 <th className="text-right py-2 px-2 font-medium">Move-Outs</th>
                 <th className="text-right py-2 px-2 font-medium">Initials</th>
                 <th className="text-right py-2 px-2 font-medium">Retained</th>
-                <th className="text-right py-2 px-2 font-medium">Attrition %</th>
+                <th className="text-right py-2 px-2 font-medium">Retention %</th>
                 <th className="text-right py-2 px-2 font-medium">Cancels</th>
                 <th className="text-right py-2 px-2 font-medium">Skips</th>
                 <th className="text-right py-2 px-2 font-medium">Complaints</th>
@@ -263,7 +262,6 @@ export default function Sales() {
                 const quoteRate = row.leads_in > 0 ? row.leads_quoted / row.leads_in : null
                 const closeRate = row.leads_quoted > 0 ? row.leads_closed / row.leads_quoted : null
                 const retentionRate = row.initial_cleans > 0 ? row.retained / row.initial_cleans : null
-                const attritionRate = retentionRate !== null ? 1 - retentionRate : null
                 return (
                   <tr key={row.month} className="border-b border-gray-50 hover:bg-gray-50/50 transition-colors">
                     <td className="py-2.5 pr-3 font-semibold text-ink whitespace-nowrap">{monthLabel(row.month)}</td>
@@ -276,9 +274,9 @@ export default function Sales() {
                     <td className="text-right py-2.5 px-2 text-gray-700">{row.initial_cleans > 0 ? row.initial_cleans : '—'}</td>
                     <td className="text-right py-2.5 px-2 text-gray-700">{row.retained > 0 ? row.retained : '—'}</td>
                     <td className="text-right py-2.5 px-2">
-                      {attritionRate !== null
-                        ? <span className={attritionRate <= 0.4 ? 'text-ok font-semibold' : attritionRate <= 0.6 ? 'text-warn font-semibold' : 'text-danger font-semibold'}>
-                            {fmtPct(attritionRate)}
+                      {retentionRate !== null
+                        ? <span className={retentionRate >= 0.6 ? 'text-ok font-semibold' : retentionRate >= 0.4 ? 'text-warn font-semibold' : 'text-danger font-semibold'}>
+                            {fmtPct(retentionRate)}
                           </span>
                         : <span className="text-gray-400">—</span>
                       }
@@ -330,11 +328,11 @@ export default function Sales() {
             </div>
           </div>
           <div>
-            <p className="font-medium text-ink mb-1">Initial → Recurring Attrition</p>
+            <p className="font-medium text-ink mb-1">Initial → Recurring Retention</p>
             <div className="space-y-0.5 text-xs text-gray-500">
-              <p><span className="text-ok font-semibold">≤ 40%</span> — Healthy</p>
-              <p><span className="text-warn font-semibold">41–60%</span> — Watch</p>
-              <p><span className="text-danger font-semibold">&gt; 60%</span> — Investigate</p>
+              <p><span className="text-ok font-semibold">≥ 60%</span> — Healthy</p>
+              <p><span className="text-warn font-semibold">40–59%</span> — Watch</p>
+              <p><span className="text-danger font-semibold">&lt; 40%</span> — Investigate</p>
             </div>
           </div>
         </div>

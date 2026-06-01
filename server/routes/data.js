@@ -22,10 +22,10 @@ router.get('/summary', (req, res) => {
     FROM manual_entries WHERE entry_date BETWEEN ? AND ? AND daily_revenue IS NOT NULL
   `).get(monthStart, monthEnd)
 
-  // Revenue priority: invoice_revenue (lump-sum from MC Reports) > daily entry sum > legacy revenue
-  const revenue = (ms?.invoice_revenue > 0)
-    ? ms.invoice_revenue
-    : (dailyRevRow.total > 0 ? dailyRevRow.total : (ms?.revenue > 0 ? ms.revenue : 0))
+  // Revenue priority: daily entry sum (live) > invoice_revenue (lump-sum fallback) > legacy revenue
+  const revenue = (dailyRevRow.total > 0)
+    ? dailyRevRow.total
+    : (ms?.invoice_revenue > 0 ? ms.invoice_revenue : (ms?.revenue > 0 ? ms.revenue : 0))
 
   // Cancellations (computed first — needed for recurring client auto-calc)
   const mcCancellations = db.prepare(`
@@ -287,10 +287,10 @@ router.get('/monthly', (req, res) => {
       FROM manual_entries WHERE entry_date BETWEEN ? AND ? AND daily_revenue IS NOT NULL
     `).get(monthStart, monthEnd)
 
-    // Revenue priority: invoice_revenue (lump-sum) > daily entry sum > legacy revenue
-    const revenue = (ms?.invoice_revenue > 0)
-      ? ms.invoice_revenue
-      : (dailyRevRow.total > 0 ? dailyRevRow.total : (ms?.revenue > 0 ? ms.revenue : 0))
+    // Revenue priority: daily entry sum (live) > invoice_revenue (lump-sum fallback) > legacy revenue
+    const revenue = (dailyRevRow.total > 0)
+      ? dailyRevRow.total
+      : (ms?.invoice_revenue > 0 ? ms.invoice_revenue : (ms?.revenue > 0 ? ms.revenue : 0))
 
     // Lead counts from lead_records take priority over monthly_sales
     const mlc = db.prepare(`

@@ -55,8 +55,19 @@ router.get('/', (req, res) => {
       WHERE entry_date BETWEEN ? AND ?
     `).get(monthStart, monthEnd)
 
+    // Daily revenue sum from Entry page entries for this month
+    const dailyRevRow = db.prepare(`
+      SELECT COALESCE(SUM(daily_revenue), 0) AS total
+      FROM manual_entries WHERE entry_date BETWEEN ? AND ? AND daily_revenue IS NOT NULL
+    `).get(monthStart, monthEnd)
+    const revenue = dailyRevRow.total > 0
+      ? dailyRevRow.total
+      : (row.invoice_revenue > 0 ? row.invoice_revenue : (row.revenue ?? 0))
+
     return {
       ...row,
+      revenue,
+      invoice_revenue: dailyRevRow.total > 0 ? dailyRevRow.total : (row.invoice_revenue ?? 0),
       cancellations: ccCancel.total > 0 ? ccCancel.total : (row.cancellations ?? 0),
       leads_in:         lc.leads_in > 0 ? lc.leads_in         : (row.leads_in         ?? 0),
       leads_quoted:     lc.leads_in > 0 ? lc.leads_quoted     : (row.leads_quoted     ?? 0),

@@ -5,6 +5,7 @@ const today = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_Yo
 
 const INITIAL = {
   entry_date: today(),
+  daily_revenue: '',
   new_hires: '',
   staff_quit: '',
   staff_fired: '',
@@ -41,6 +42,7 @@ export default function Entry() {
       absences: parseInt(form.absences) || 0,
       revenue_generating_employees: form.revenue_generating_employees !== '' ? parseInt(form.revenue_generating_employees) : null,
       marketing_spend: form.marketing_spend !== '' ? parseFloat(form.marketing_spend) : null,
+      daily_revenue: form.daily_revenue !== '' ? parseFloat(form.daily_revenue) : null,
       skips: parseInt(form.skips) || 0,
       client_count: form.client_count !== '' ? parseInt(form.client_count) : null,
       gift_card_sales: form.gift_card_sales !== '' ? parseFloat(form.gift_card_sales) : null,
@@ -87,7 +89,7 @@ export default function Entry() {
       <div className="card mb-5 border border-blue-100 bg-blue-50/40">
         <h3 className="text-xs font-semibold text-blue-700 mb-2">📋 What's automated vs. what you enter here</h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-1 text-[11px]">
-          <span className="text-amber-600">✏️ Revenue → Sales &amp; Leads → Edit Month (MC invoice total)</span>
+          <span className="text-blue-600">✏️ Revenue → here daily (MC invoice total excl. tips) · sums to MTD automatically</span>
           <span className="text-blue-600">✏️ New hires / quit / fired → here (daily)</span>
           <span className="text-green-600">🤖 Leads, quotes, closes ← auto via GHL</span>
           <span className="text-blue-600">✏️ Call-ins / absences → here (daily)</span>
@@ -117,13 +119,13 @@ export default function Entry() {
                 <thead>
                   <tr className="text-gray-500 border-b">
                     <th className="text-left pb-2">Date</th>
+                    <th className="text-right pb-2">Revenue</th>
                     <th className="text-right pb-2">Hires</th>
                     <th className="text-right pb-2">Quit</th>
                     <th className="text-right pb-2">Fired</th>
                     <th className="text-right pb-2">Call-ins</th>
                     <th className="text-right pb-2">Absences</th>
                     <th className="text-right pb-2">RGE</th>
-                    <th className="text-right pb-2">Mktg $</th>
                     <th className="text-right pb-2">Skips</th>
                     <th className="text-right pb-2">Clients</th>
                   </tr>
@@ -132,13 +134,13 @@ export default function Entry() {
                   {recentEntries.map(e => (
                     <tr key={e.id} className="border-b border-gray-50">
                       <td className="py-1.5 font-medium">{e.entry_date}</td>
+                      <td className="text-right font-medium text-ok">{e.daily_revenue != null ? `$${Number(e.daily_revenue).toLocaleString(undefined, {maximumFractionDigits: 0})}` : '—'}</td>
                       <td className="text-right text-ok">{e.new_hires}</td>
                       <td className="text-right text-warn">{e.staff_quit}</td>
                       <td className="text-right text-danger">{e.staff_fired}</td>
                       <td className="text-right">{e.call_ins}</td>
                       <td className="text-right">{e.absences ?? 0}</td>
                       <td className="text-right">{e.revenue_generating_employees ?? '—'}</td>
-                      <td className="text-right">{e.marketing_spend != null ? `$${Number(e.marketing_spend).toLocaleString()}` : '—'}</td>
                       <td className="text-right">{e.skips ?? 0}</td>
                       <td className="text-right">{e.client_count ?? '—'}</td>
                     </tr>
@@ -161,6 +163,27 @@ export default function Entry() {
             onChange={e => set('entry_date', e.target.value)}
             required
           />
+        </div>
+
+        {/* Daily Revenue */}
+        <div>
+          <h3 className="text-sm font-semibold text-gray-700 mb-3 pb-2 border-b">Today's Revenue</h3>
+          <div>
+            <label className="form-label">Invoice Revenue Today ($) <span className="text-gray-400 font-normal normal-case">excl. tips</span></label>
+            <div className="relative">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">$</span>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                className="form-input pl-7"
+                placeholder="e.g. 1840.00"
+                value={form.daily_revenue}
+                onChange={e => set('daily_revenue', e.target.value)}
+              />
+            </div>
+            <p className="text-xs text-gray-400 mt-1">Pull from MC → Reports → today's completed jobs. Sums into MTD revenue on Overview automatically. Leave blank if no jobs ran today.</p>
+          </div>
         </div>
 
         {/* Staff changes */}

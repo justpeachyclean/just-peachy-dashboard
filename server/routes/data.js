@@ -16,10 +16,16 @@ router.get('/summary', (req, res) => {
   // Pull from monthly_sales first (manual summary), fallback to webhook events
   const ms = db.prepare('SELECT * FROM monthly_sales WHERE month = ?').get(month)
 
-  // Revenue priority: invoice_revenue (tip-free, auto-accumulated) > manual revenue > legacy fallback
+  // Daily revenue sum from manual entries (entered on Entry page each day)
+  const dailyRevRow = db.prepare(`
+    SELECT COALESCE(SUM(daily_revenue), 0) AS total
+    FROM manual_entries WHERE entry_date BETWEEN ? AND ? AND daily_revenue IS NOT NULL
+  `).get(monthStart, monthEnd)
+
+  // Revenue priority: invoice_revenue (lump-sum from MC Reports) > daily entry sum > legacy revenue
   const revenue = (ms?.invoice_revenue > 0)
     ? ms.invoice_revenue
-    : (ms?.revenue > 0 ? ms.revenue : 0)
+    : (dailyRevRow.total > 0 ? dailyRevRow.total : (ms?.revenue > 0 ? ms.revenue : 0))
 
   // Cancellations (computed first — needed for recurring client auto-calc)
   const mcCancellations = db.prepare(`
@@ -275,10 +281,16 @@ router.get('/monthly', (req, res) => {
       ? Math.round(avgRge * stretchHours * billingRate * daysInMonth)
       : null
 
-    // Revenue priority: invoice_revenue > manual revenue > 0
+    // Daily revenue sum from Entry page
+    const dailyRevRow = db.prepare(`
+      SELECT COALESCE(SUM(daily_revenue), 0) AS total
+      FROM manual_entries WHERE entry_date BETWEEN ? AND ? AND daily_revenue IS NOT NULL
+    `).get(monthStart, monthEnd)
+
+    // Revenue priority: invoice_revenue (lump-sum) > daily entry sum > legacy revenue
     const revenue = (ms?.invoice_revenue > 0)
       ? ms.invoice_revenue
-      : (ms?.revenue > 0 ? ms.revenue : 0)
+      : (dailyRevRow.total > 0 ? dailyRevRow.total : (ms?.revenue > 0 ? ms.revenue : 0))
 
     // Lead counts from lead_records take priority over monthly_sales
     const mlc = db.prepare(`

@@ -16,6 +16,7 @@ router.post('/', (req, res) => {
     skips = 0,
     client_count,     // snapshot of current recurring client count
     gift_card_sales,  // optional — Gift Up or manual phone sale
+    daily_revenue,    // today's invoice revenue from MC (excl. tips); summed into MTD automatically
     notes,
     entered_by = 'manager',
   } = req.body
@@ -25,8 +26,8 @@ router.post('/', (req, res) => {
   const insert = db.prepare(`
     INSERT INTO manual_entries
       (entry_date, new_hires, staff_quit, staff_fired, call_ins, absences,
-       revenue_generating_employees, marketing_spend, skips, client_count, gift_card_sales, notes, entered_by)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       revenue_generating_employees, marketing_spend, skips, client_count, gift_card_sales, daily_revenue, notes, entered_by)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(entry_date, entered_by) DO UPDATE SET
       new_hires = excluded.new_hires,
       staff_quit = excluded.staff_quit,
@@ -38,6 +39,7 @@ router.post('/', (req, res) => {
       skips = excluded.skips,
       client_count = excluded.client_count,
       gift_card_sales = excluded.gift_card_sales,
+      daily_revenue = excluded.daily_revenue,
       notes = excluded.notes
   `)
 
@@ -53,6 +55,7 @@ router.post('/', (req, res) => {
     skips || 0,
     client_count ?? null,
     gift_card_sales ?? null,
+    daily_revenue != null ? parseFloat(daily_revenue) : null,
     notes ?? null,
     entered_by
   )

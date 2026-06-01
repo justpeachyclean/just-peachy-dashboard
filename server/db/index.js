@@ -128,6 +128,8 @@ const migrations = [
   `INSERT OR IGNORE INTO sales_reps (name, active, start_date) SELECT 'Lexi Ledom', 1, '2026-01-01' WHERE NOT EXISTS (SELECT 1 FROM sales_reps WHERE LOWER(name) = 'lexi ledom')`,
   // Backfill rep_name: normalize 'Lexi' → 'Lexi Ledom' on all lead records
   `UPDATE lead_records SET rep_name = 'Lexi Ledom' WHERE LOWER(TRIM(rep_name)) = 'lexi'`,
+  // Daily revenue field — entered on Entry page, summed into MTD revenue automatically
+  `ALTER TABLE manual_entries ADD COLUMN daily_revenue REAL`,
 ]
 for (const sql of migrations) {
   try { db.exec(sql) } catch (_) { /* column already exists — safe to ignore */ }

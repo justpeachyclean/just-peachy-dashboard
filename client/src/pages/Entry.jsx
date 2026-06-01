@@ -26,6 +26,8 @@ export default function Entry() {
   const [status, setStatus] = useState(null) // null | 'saving' | 'saved' | 'error'
   const [recentEntries, setRecentEntries] = useState([])
   const [showRecent, setShowRecent] = useState(false)
+  const [editingId, setEditingId] = useState(null)
+  const [editRevenue, setEditRevenue] = useState('')
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
 
@@ -67,10 +69,26 @@ export default function Entry() {
   }
 
   const loadRecent = async () => {
-    const res = await apiFetch('/api/entry/manual?limit=10')
+    const res = await apiFetch('/api/entry/manual?limit=20')
     const data = await res.json()
     setRecentEntries(data)
     setShowRecent(true)
+  }
+
+  const deleteEntry = async (id) => {
+    if (!window.confirm('Delete this entry?')) return
+    await apiFetch(`/api/entry/manual/${id}`, { method: 'DELETE' })
+    loadRecent()
+  }
+
+  const saveEditRevenue = async (id) => {
+    await apiFetch(`/api/entry/manual/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ daily_revenue: editRevenue === '' ? null : parseFloat(editRevenue) }),
+    })
+    setEditingId(null)
+    loadRecent()
   }
 
   return (
@@ -124,25 +142,45 @@ export default function Entry() {
                     <th className="text-right pb-2">Quit</th>
                     <th className="text-right pb-2">Fired</th>
                     <th className="text-right pb-2">Call-ins</th>
-                    <th className="text-right pb-2">Absences</th>
                     <th className="text-right pb-2">RGE</th>
                     <th className="text-right pb-2">Skips</th>
                     <th className="text-right pb-2">Clients</th>
+                    <th className="pb-2"></th>
                   </tr>
                 </thead>
                 <tbody>
                   {recentEntries.map(e => (
-                    <tr key={e.id} className="border-b border-gray-50">
-                      <td className="py-1.5 font-medium">{e.entry_date}</td>
-                      <td className="text-right font-medium text-ok">{e.daily_revenue != null ? `$${Number(e.daily_revenue).toLocaleString(undefined, {maximumFractionDigits: 0})}` : '—'}</td>
-                      <td className="text-right text-ok">{e.new_hires}</td>
-                      <td className="text-right text-warn">{e.staff_quit}</td>
-                      <td className="text-right text-danger">{e.staff_fired}</td>
-                      <td className="text-right">{e.call_ins}</td>
-                      <td className="text-right">{e.absences ?? 0}</td>
-                      <td className="text-right">{e.revenue_generating_employees ?? '—'}</td>
-                      <td className="text-right">{e.skips ?? 0}</td>
-                      <td className="text-right">{e.client_count ?? '—'}</td>
+                    <tr key={e.id} className="border-b border-gray-50 hover:bg-gray-50/50">
+                      <td className="py-1.5 font-medium text-xs">{e.entry_date}</td>
+                      <td className="text-right font-medium text-ok text-xs">
+                        {editingId === e.id ? (
+                          <div className="flex items-center gap-1 justify-end">
+                            <input
+                              type="number"
+                              className="w-24 text-xs border border-gray-200 rounded px-1 py-0.5 text-right"
+                              value={editRevenue}
+                              onChange={ev => setEditRevenue(ev.target.value)}
+                              autoFocus
+                            />
+                            <button onClick={() => saveEditRevenue(e.id)} className="text-ok text-xs hover:underline">✓</button>
+                            <button onClick={() => setEditingId(null)} className="text-gray-400 text-xs hover:underline">✕</button>
+                          </div>
+                        ) : (
+                          <span onClick={() => { setEditingId(e.id); setEditRevenue(e.daily_revenue ?? '') }} className="cursor-pointer hover:text-brand" title="Click to edit">
+                            {e.daily_revenue != null ? `$${Number(e.daily_revenue).toLocaleString(undefined, {maximumFractionDigits: 0})}` : '—'}
+                          </span>
+                        )}
+                      </td>
+                      <td className="text-right text-ok text-xs">{e.new_hires || '—'}</td>
+                      <td className="text-right text-warn text-xs">{e.staff_quit || '—'}</td>
+                      <td className="text-right text-danger text-xs">{e.staff_fired || '—'}</td>
+                      <td className="text-right text-xs">{e.call_ins || '—'}</td>
+                      <td className="text-right text-xs">{e.revenue_generating_employees ?? '—'}</td>
+                      <td className="text-right text-xs">{e.skips || '—'}</td>
+                      <td className="text-right text-xs">{e.client_count ?? '—'}</td>
+                      <td className="pl-2">
+                        <button onClick={() => deleteEntry(e.id)} className="text-gray-300 hover:text-danger text-xs" title="Delete entry">✕</button>
+                      </td>
                     </tr>
                   ))}
                 </tbody>

@@ -95,4 +95,52 @@ router.get('/:id', (req, res) => {
   res.json(row)
 })
 
+// PATCH /api/entry/manual/:id — update specific fields on an entry
+router.patch('/:id', (req, res) => {
+  const row = db.prepare('SELECT * FROM manual_entries WHERE id = ?').get(req.params.id)
+  if (!row) return res.status(404).json({ error: 'Not found' })
+
+  const {
+    daily_revenue, new_hires, staff_quit, staff_fired, call_ins,
+    absences, revenue_generating_employees, marketing_spend,
+    skips, client_count, gift_card_sales, notes, entry_date,
+  } = req.body
+
+  db.prepare(`
+    UPDATE manual_entries SET
+      entry_date                 = COALESCE(?, entry_date),
+      daily_revenue              = ?,
+      new_hires                  = COALESCE(?, new_hires),
+      staff_quit                 = COALESCE(?, staff_quit),
+      staff_fired                = COALESCE(?, staff_fired),
+      call_ins                   = COALESCE(?, call_ins),
+      absences                   = COALESCE(?, absences),
+      revenue_generating_employees = COALESCE(?, revenue_generating_employees),
+      marketing_spend            = COALESCE(?, marketing_spend),
+      skips                      = COALESCE(?, skips),
+      client_count               = COALESCE(?, client_count),
+      gift_card_sales            = COALESCE(?, gift_card_sales),
+      notes                      = COALESCE(?, notes)
+    WHERE id = ?
+  `).run(
+    entry_date ?? null,
+    daily_revenue !== undefined ? (daily_revenue !== null ? parseFloat(daily_revenue) : null) : row.daily_revenue,
+    new_hires ?? null, staff_quit ?? null, staff_fired ?? null,
+    call_ins ?? null, absences ?? null,
+    revenue_generating_employees ?? null, marketing_spend ?? null,
+    skips ?? null, client_count ?? null, gift_card_sales ?? null,
+    notes ?? null,
+    req.params.id
+  )
+  res.json({ ok: true })
+})
+
+// DELETE /api/entry/manual/:id
+router.delete('/:id', (req, res) => {
+  const row = db.prepare('SELECT * FROM manual_entries WHERE id = ?').get(req.params.id)
+  if (!row) return res.status(404).json({ error: 'Not found' })
+  db.prepare('DELETE FROM manual_entries WHERE id = ?').run(req.params.id)
+  res.json({ ok: true })
+})
+
 module.exports = router

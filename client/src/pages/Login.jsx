@@ -47,7 +47,9 @@ export default function Login() {
             </button>
           </form>
         </div>
-        <p className="text-center text-xs text-gray-300 mt-4">Ask your admin to create your account</p>
+        <p className="text-center text-xs text-gray-400 mt-4">
+          Trouble logging in? Contact Jen — username is <span className="font-mono">admin</span>
+        </p>
       </div>
     </div>
   )

@@ -1,7 +1,7 @@
 const express = require('express')
 const router = express.Router()
 const db = require('../db')
-const { checkPassword, makeToken, hashPassword } = require('../lib/auth')
+const { checkPassword, makeToken, hashPassword, verifyToken } = require('../lib/auth')
 
 // GET /api/auth/status
 router.get('/status', (req, res) => {
@@ -70,6 +70,26 @@ router.post('/reset-admin', (req, res) => {
   }
   console.log('🔐 Admin password reset via /api/auth/reset-admin')
   res.json({ ok: true, message: 'Admin password updated. Log in with username: admin' })
+})
+
+// POST /api/auth/change-password — change own password (requires Bearer token + current password)
+router.post('/change-password', (req, res) => {
+  const header = req.headers.authorization
+  const token = header?.startsWith('Bearer ') ? header.slice(7) : null
+  const user = verifyToken(token)
+  if (!user) return res.status(401).json({ error: 'Unauthorized — log in first' })
+
+  const { current_password, new_password } = req.body || {}
+  if (!current_password || !new_password) return res.status(400).json({ error: 'current_password and new_password required' })
+  if (new_password.length < 6) return res.status(400).json({ error: 'New password must be at least 6 characters' })
+
+  const dbUser = db.prepare('SELECT * FROM users WHERE id = ?').get(user.id)
+  if (!dbUser || !checkPassword(current_password, dbUser.password_hash)) {
+    return res.status(401).json({ error: 'Current password is incorrect' })
+  }
+
+  db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hashPassword(new_password), user.id)
+  res.json({ ok: true, message: 'Password updated successfully' })
 })
 
 module.exports = router

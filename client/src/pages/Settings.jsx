@@ -378,6 +378,56 @@ function AuditLog() {
   )
 }
 
+function ChangePassword() {
+  const [form, setForm] = useState({ current: '', next: '', confirm: '' })
+  const [msg, setMsg] = useState(null)
+  const [saving, setSaving] = useState(false)
+
+  const handleSubmit = async (e) => {
+    e.preventDefault()
+    if (form.next !== form.confirm) { setMsg({ ok: false, text: 'New passwords do not match' }); return }
+    if (form.next.length < 6) { setMsg({ ok: false, text: 'New password must be at least 6 characters' }); return }
+    setSaving(true)
+    try {
+      const res = await apiFetch('/api/auth/change-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ current_password: form.current, new_password: form.next }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error)
+      setMsg({ ok: true, text: 'Password changed successfully' })
+      setForm({ current: '', next: '', confirm: '' })
+    } catch (err) {
+      setMsg({ ok: false, text: err.message })
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="card">
+      <h2 className="text-sm font-semibold text-gray-700 mb-4">Change Password</h2>
+      <form onSubmit={handleSubmit} className="space-y-3 max-w-sm">
+        <div>
+          <label className="form-label">Current Password</label>
+          <input type="password" className="form-input" value={form.current} onChange={e => setForm(p => ({ ...p, current: e.target.value }))} required />
+        </div>
+        <div>
+          <label className="form-label">New Password</label>
+          <input type="password" className="form-input" value={form.next} onChange={e => setForm(p => ({ ...p, next: e.target.value }))} required minLength={6} />
+        </div>
+        <div>
+          <label className="form-label">Confirm New Password</label>
+          <input type="password" className="form-input" value={form.confirm} onChange={e => setForm(p => ({ ...p, confirm: e.target.value }))} required />
+        </div>
+        {msg && <p className={`text-sm font-medium ${msg.ok ? 'text-ok' : 'text-danger'}`}>{msg.text}</p>}
+        <button type="submit" disabled={saving} className="btn-primary text-sm">{saving ? 'Saving…' : 'Update Password'}</button>
+      </form>
+    </div>
+  )
+}
+
 export default function Settings() {
   const { currentUser } = useAuth()
   const [values, setValues] = useState({})
@@ -476,6 +526,10 @@ export default function Settings() {
           marketingCategory={values.qb_marketing_category || 'Advertising'}
           recruitingCategory={values.qb_recruiting_category || 'Recruiting'}
         />
+      </div>
+
+      <div className="mt-5">
+        <ChangePassword />
       </div>
 
       {currentUser?.role === 'admin' && (

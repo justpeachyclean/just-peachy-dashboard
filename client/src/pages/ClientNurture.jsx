@@ -83,6 +83,10 @@ export default function ClientNurture() {
   const [showAddWb, setShowAddWb] = useState(false)
   const [addWbForm, setAddWbForm] = useState({ client_name: '', reason_code: 'T1', cancel_date: '', next_contact: '' })
 
+  // ── Journey stage panel (inline note + done) ─────────────────────────────
+  const [activeStage, setActiveStage] = useState(null) // { clientName, stageKey, careId }
+  const [stageNote, setStageNote] = useState('')
+
   // ── Quick note state ──────────────────────────────────────────────────────
   const [quickNoteId, setQuickNoteId] = useState(null)   // care item id
   const [quickNoteText, setQuickNoteText] = useState('')
@@ -179,6 +183,35 @@ export default function ClientNurture() {
     setShowAddWb(false)
     setAddWbForm({ client_name: '', reason_code: 'T1', cancel_date: '', next_contact: '' })
     loadWb()
+  }
+
+  // ── Journey stage handlers ────────────────────────────────────────────────
+  const openStagePanel = (r) => {
+    if (activeStage?.careId === r.id) { setActiveStage(null); setStageNote(''); return }
+    setActiveStage({ clientName: r.client_name, stageKey: r.care_type, careId: r.id })
+    setStageNote(r.notes || '')
+  }
+
+  const completeWithNote = async (r) => {
+    await apiFetch(`/api/care/${r.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ completed: 1, completed_date: todayEastern(), notes: stageNote || r.notes || null }),
+    })
+    setActiveStage(null)
+    setStageNote('')
+    loadCare()
+  }
+
+  const saveStageNoteOnly = async (r) => {
+    await apiFetch(`/api/care/${r.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ notes: stageNote }),
+    })
+    setActiveStage(null)
+    setStageNote('')
+    loadCare()
   }
 
   // ── Quick note handlers ───────────────────────────────────────────────────
@@ -327,13 +360,17 @@ export default function ClientNurture() {
                           const isComplete = r?.completed
                           const isPending = r && !r.completed && !isOverdue
                           const isMissing = !r
+                          const isActive = activeStage?.careId === r?.id
+                          const hasNote = r?.notes?.trim()
 
-                          const dotColor = isComplete ? 'bg-green-500 border-green-500'
+                          const dotColor = isActive ? 'bg-brand border-brand ring-2 ring-brand/30'
+                            : isComplete ? 'bg-green-500 border-green-500'
                             : isOverdue ? 'bg-warn border-warn'
                             : isPending ? 'bg-blue-400 border-blue-400'
                             : 'bg-gray-200 border-gray-200'
 
-                          const labelColor = isComplete ? 'text-green-600'
+                          const labelColor = isActive ? 'text-brand font-bold'
+                            : isComplete ? 'text-green-600'
                             : isOverdue ? 'text-warn'
                             : isPending ? 'text-blue-500'
                             : 'text-gray-300'
@@ -342,21 +379,23 @@ export default function ClientNurture() {
                             <div key={stage.key} className="flex items-start flex-1 min-w-[90px]">
                               <div className="flex flex-col items-center flex-1">
                                 {/* Node */}
-                                <button
-                                  className={`w-8 h-8 rounded-full border-2 flex items-center justify-center text-white text-xs font-bold shrink-0 ${dotColor} ${r ? 'cursor-pointer hover:opacity-80' : 'cursor-default'}`}
-                                  title={r
-                                    ? isComplete
-                                      ? `✓ Done ${r.completed_date}${r.notes ? ' — ' + r.notes : ''} — click to undo`
-                                      : `${stage.short}: ${r.scheduled_date}${r.notes ? ' — ' + r.notes : ''} — click to mark done`
-                                    : 'Not scheduled'}
-                                  onClick={() => {
-                                    if (!r) return
-                                    if (isComplete) uncompleteCare(r)
-                                    else completeCare(r)
-                                  }}
-                                >
-                                  {isComplete ? '✓' : idx + 1}
-                                </button>
+                                <div className="relative">
+                                  <button
+                                    className={`w-8 h-8 rounded-full border-2 flex items-center justify-center text-white text-xs font-bold shrink-0 transition-all ${dotColor} ${r ? 'cursor-pointer hover:opacity-80' : 'cursor-default'}`}
+                                    title={r ? (isComplete ? 'Click to undo' : 'Click to open') : 'Not scheduled'}
+                                    onClick={() => {
+                                      if (!r) return
+                                      if (isComplete) uncompleteCare(r)
+                                      else openStagePanel(r)
+                                    }}
+                                  >
+                                    {isComplete ? '✓' : idx + 1}
+                                  </button>
+                                  {/* Note indicator dot */}
+                                  {hasNote && (
+                                    <span className="absolute -top-1 -right-1 w-3 h-3 bg-blue-400 rounded-full border border-white text-white flex items-center justify-center text-[7px] font-bold">💬</span>
+                                  )}
+                                </div>
                                 {/* Label */}
                                 <span className={`text-xs mt-1 font-medium text-center leading-tight ${labelColor}`}>{stage.short}</span>
                                 {/* Date/status */}
@@ -381,6 +420,36 @@ export default function ClientNurture() {
                           )
                         })}
                       </div>
+
+                      {/* Inline stage panel — notes + mark done */}
+                      {activeStage && Object.values(stages).some(r => r?.id === activeStage.careId) && (() => {
+                        const r = Object.values(stages).find(r => r?.id === activeStage.careId)
+                        const ct = CARE_TYPES[r.care_type] || {}
+                        return (
+                          <div className="mt-3 pt-3 border-t border-brand/20 bg-rose-50/40 rounded-lg p-3">
+                            <div className="flex items-center justify-between mb-2">
+                              <span className="text-sm font-semibold text-brand">{ct.icon} {ct.label} — {r.scheduled_date}</span>
+                              <button onClick={() => { setActiveStage(null); setStageNote('') }} className="text-gray-400 hover:text-gray-600 text-lg leading-none">&times;</button>
+                            </div>
+                            <textarea
+                              rows={3}
+                              autoFocus
+                              className="form-input text-sm w-full mb-3"
+                              placeholder="Call notes — what was discussed, client mood, follow-up needed…"
+                              value={stageNote}
+                              onChange={e => setStageNote(e.target.value)}
+                            />
+                            <div className="flex gap-2 justify-end flex-wrap">
+                              <button onClick={() => saveStageNoteOnly(r)} className="text-xs border border-gray-200 bg-white px-3 py-1.5 rounded-lg text-gray-600 hover:bg-gray-50 font-medium">
+                                Save Note Only
+                              </button>
+                              <button onClick={() => completeWithNote(r)} className="text-xs bg-green-600 text-white px-3 py-1.5 rounded-lg hover:bg-green-700 font-semibold">
+                                ✓ Save Note &amp; Mark Done
+                              </button>
+                            </div>
+                          </div>
+                        )
+                      })()}
                     </div>
                   )
                 })}

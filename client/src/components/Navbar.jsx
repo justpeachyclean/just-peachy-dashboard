@@ -10,7 +10,7 @@ const tabs = [
   { path: '/cancellations', label: 'Cancellations' },
   { path: '/nurture', label: 'Client Care' },
   { path: '/feedback', label: 'Feedback' },
-  { path: '/hiring', label: 'Hiring' },
+  { path: '/breakages', label: 'Breakages' },
   { path: '/connections', label: 'Connections' },
 ]
 

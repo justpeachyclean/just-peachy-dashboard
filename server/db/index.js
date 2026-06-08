@@ -130,6 +130,19 @@ const migrations = [
   `UPDATE lead_records SET rep_name = 'Lexi Ledom' WHERE LOWER(TRIM(rep_name)) = 'lexi'`,
   // Daily revenue field — entered on Entry page, summed into MTD revenue automatically
   `ALTER TABLE manual_entries ADD COLUMN daily_revenue REAL`,
+  // Breakage tracking
+  `CREATE TABLE IF NOT EXISTS breakages (
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    report_date      TEXT NOT NULL,
+    tech_name        TEXT,
+    client_name      TEXT,
+    item_broken      TEXT NOT NULL,
+    value            REAL,
+    resolved         INTEGER DEFAULT 0,
+    resolution_notes TEXT,
+    notes            TEXT,
+    created_at       TEXT DEFAULT (datetime('now'))
+  )`,
 ]
 for (const sql of migrations) {
   try { db.exec(sql) } catch (_) { /* column already exists — safe to ignore */ }

@@ -28,6 +28,7 @@ app.use('/api/care',           require('./routes/care'))
 app.use('/api/users',          require('./routes/users'))
 app.use('/api/hiring',         require('./routes/hiring'))
 app.use('/api/staff',          require('./routes/staff'))
+app.use('/api/breakages',      require('./routes/breakages'))
 
 // Health check
 app.get('/api/health', (req, res) => {

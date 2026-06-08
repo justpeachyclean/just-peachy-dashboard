@@ -6,7 +6,7 @@ import Overview from './pages/Overview'
 import Sales from './pages/Sales'
 import BonusTracker from './pages/BonusTracker'
 import UnitEconomics from './pages/UnitEconomics'
-import Hiring from './pages/Hiring'
+import Breakages from './pages/Breakages'
 import Leads from './pages/Leads'
 import CancelledClients from './pages/CancelledClients'
 import ClientNurture from './pages/ClientNurture'
@@ -38,7 +38,7 @@ function AppShell() {
           <Route path="/sales" element={<Sales />} />
           <Route path="/bonus" element={<BonusTracker />} />
           <Route path="/economics" element={<UnitEconomics />} />
-          <Route path="/hiring" element={<Hiring />} />
+          <Route path="/breakages" element={<Breakages />} />
           <Route path="/leads" element={<Leads />} />
           <Route path="/cancellations" element={<CancelledClients />} />
           <Route path="/nurture" element={<ClientNurture />} />

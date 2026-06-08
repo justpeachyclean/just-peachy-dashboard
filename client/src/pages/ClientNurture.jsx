@@ -83,6 +83,12 @@ export default function ClientNurture() {
   const [showAddWb, setShowAddWb] = useState(false)
   const [addWbForm, setAddWbForm] = useState({ client_name: '', reason_code: 'T1', cancel_date: '', next_contact: '' })
 
+  // ── Quick note state ──────────────────────────────────────────────────────
+  const [quickNoteId, setQuickNoteId] = useState(null)   // care item id
+  const [quickNoteText, setQuickNoteText] = useState('')
+  const [wbQuickNoteId, setWbQuickNoteId] = useState(null) // win-back id
+  const [wbQuickNoteText, setWbQuickNoteText] = useState('')
+
   const loadCare = () =>
     apiFetch(`/api/care?status=all`).then(r => r.json()).then(setCareData)
 
@@ -172,6 +178,29 @@ export default function ClientNurture() {
     })
     setShowAddWb(false)
     setAddWbForm({ client_name: '', reason_code: 'T1', cancel_date: '', next_contact: '' })
+    loadWb()
+  }
+
+  // ── Quick note handlers ───────────────────────────────────────────────────
+  const saveQuickNote = async (id) => {
+    await apiFetch(`/api/care/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ notes: quickNoteText }),
+    })
+    setQuickNoteId(null)
+    setQuickNoteText('')
+    loadCare()
+  }
+
+  const saveWbQuickNote = async (id) => {
+    await apiFetch(`/api/nurture/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ contact_notes: wbQuickNoteText }),
+    })
+    setWbQuickNoteId(null)
+    setWbQuickNoteText('')
     loadWb()
   }
 
@@ -529,6 +558,13 @@ export default function ClientNurture() {
                           </button>
                         )}
                         <button
+                          onClick={() => {
+                            if (quickNoteId === item.id) { setQuickNoteId(null); setQuickNoteText('') }
+                            else { setQuickNoteId(item.id); setQuickNoteText(item.notes || '') }
+                          }}
+                          className="text-xs border border-blue-100 bg-blue-50 text-blue-700 px-2 py-1 rounded-lg hover:bg-blue-100 font-medium"
+                        >📝 Note</button>
+                        <button
                           onClick={() => { setEditingCare(isEditing ? null : item.id); setEditCareForm({ client_name: item.client_name, care_type: item.care_type, gift_type: item.gift_type || '', gift_notes: item.gift_notes || '', scheduled_date: item.scheduled_date || '', notes: item.notes || '', assigned_to: item.assigned_to || '' }) }}
                           className="text-xs border border-gray-200 bg-white px-2 py-1 rounded-lg hover:bg-gray-50 font-medium text-gray-600"
                         >
@@ -537,6 +573,25 @@ export default function ClientNurture() {
                         <button onClick={() => deleteCare(item)} className="text-gray-300 hover:text-red-400 transition-colors px-1" title="Delete">✕</button>
                       </div>
                     </div>
+
+                    {/* Quick note panel */}
+                    {quickNoteId === item.id && (
+                      <div className="mt-3 pt-3 border-t border-blue-100 flex flex-col gap-2">
+                        <label className="text-xs font-semibold text-blue-700">📝 Call Notes</label>
+                        <textarea
+                          rows={3}
+                          autoFocus
+                          className="form-input text-sm"
+                          placeholder="What was discussed, client mood, follow-up needed…"
+                          value={quickNoteText}
+                          onChange={e => setQuickNoteText(e.target.value)}
+                        />
+                        <div className="flex gap-2 justify-end">
+                          <button onClick={() => { setQuickNoteId(null); setQuickNoteText('') }} className="text-sm text-gray-400 hover:text-gray-600">Cancel</button>
+                          <button onClick={() => saveQuickNote(item.id)} className="btn-primary text-sm">Save Note</button>
+                        </div>
+                      </div>
+                    )}
 
                     {/* Inline edit */}
                     {isEditing && (
@@ -691,6 +746,13 @@ export default function ClientNurture() {
                         </div>
                         <div className="flex items-center gap-2 shrink-0">
                           <button
+                            onClick={() => {
+                              if (wbQuickNoteId === c.id) { setWbQuickNoteId(null); setWbQuickNoteText('') }
+                              else { setWbQuickNoteId(c.id); setWbQuickNoteText(c.contact_notes || '') }
+                            }}
+                            className="text-xs border border-blue-100 bg-blue-50 text-blue-700 px-2 py-1 rounded-lg hover:bg-blue-100 font-medium"
+                          >📝 Note</button>
+                          <button
                             onClick={() => setWbEditing(p => ({ ...p, [c.id]: p[c.id] ? null : {} }))}
                             className="text-xs border border-gray-200 bg-white px-2 py-1 rounded-lg hover:bg-gray-50 font-medium text-gray-600"
                           >Edit</button>
@@ -701,6 +763,24 @@ export default function ClientNurture() {
                           <button onClick={() => deleteWb(c)} className="text-gray-300 hover:text-red-400 px-1 transition-colors" title="Remove">✕</button>
                         </div>
                       </div>
+
+                      {wbQuickNoteId === c.id && (
+                        <div className="mt-3 pt-3 border-t border-blue-100 flex flex-col gap-2">
+                          <label className="text-xs font-semibold text-blue-700">📝 Call Notes</label>
+                          <textarea
+                            rows={3}
+                            autoFocus
+                            className="form-input text-sm"
+                            placeholder="What happened, client response, next steps…"
+                            value={wbQuickNoteText}
+                            onChange={e => setWbQuickNoteText(e.target.value)}
+                          />
+                          <div className="flex gap-2 justify-end">
+                            <button onClick={() => { setWbQuickNoteId(null); setWbQuickNoteText('') }} className="text-sm text-gray-400 hover:text-gray-600">Cancel</button>
+                            <button onClick={() => saveWbQuickNote(c.id)} className="btn-primary text-sm">Save Note</button>
+                          </div>
+                        </div>
+                      )}
 
                       {ed !== null && ed !== undefined && (
                         <div className="mt-3 pt-3 border-t border-gray-100 grid grid-cols-2 sm:grid-cols-4 gap-3">

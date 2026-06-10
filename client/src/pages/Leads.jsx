@@ -162,6 +162,306 @@ const BLANK_FORM = {
   notes: '',
 }
 
+// ── CSV Import helpers ────────────────────────────────────────────────────
+const IMPORT_COLS = [
+  { key: 'record_date',        label: 'Date *',               hint: 'MM/DD/YYYY or YYYY-MM-DD' },
+  { key: 'client_name',        label: 'Client Name',          hint: '' },
+  { key: 'rep_name',           label: 'Sales Rep',            hint: 'defaults to Lexi Ledom' },
+  { key: 'frequency',          label: 'Frequency',            hint: 'weekly, biweekly, monthly…' },
+  { key: 'price_per_clean',    label: 'Recurring Price ($)',  hint: '' },
+  { key: 'initial_clean_price',label: 'Initial Clean Price ($)',hint: '' },
+  { key: 'quote_amount',       label: 'Quote Amount ($)',     hint: '' },
+  { key: 'converted',          label: 'Converted? (Y/N)',     hint: '' },
+  { key: 'initial_clean_booked',label: 'Initial Clean Booked? (Y/N)', hint: '' },
+  { key: 'recurring_retained', label: 'Recurring Retained? (Y/N)', hint: '' },
+  { key: 'lead_source',        label: 'Lead Source',          hint: '' },
+  { key: 'reason',             label: 'Reason Not Converted', hint: '' },
+  { key: 'notes',              label: 'Notes',                hint: '' },
+]
+
+function parseDate(raw) {
+  if (!raw) return null
+  const s = raw.trim()
+  // YYYY-MM-DD already fine
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s
+  // M/D/YYYY or MM/DD/YYYY
+  const m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/)
+  if (m) return `${m[3]}-${m[1].padStart(2,'0')}-${m[2].padStart(2,'0')}`
+  // M/D/YY  e.g. 6/3/26
+  const m2 = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2})$/)
+  if (m2) return `20${m2[3]}-${m2[1].padStart(2,'0')}-${m2[2].padStart(2,'0')}`
+  return null
+}
+
+function parseBool(v) {
+  if (v == null) return false
+  const s = v.toString().toLowerCase().trim()
+  return ['y','yes','1','true','x'].includes(s)
+}
+
+function parseFreq(v) {
+  if (!v) return ''
+  const map = {
+    weekly:'weekly', 'bi-weekly':'biweekly', biweekly:'biweekly',
+    monthly:'monthly', 'tri-weekly':'tri-weekly', 'every 4 weeks':'every 4 weeks',
+    'one time':'one_time', 'one-time':'one_time', 'one_time':'one_time',
+    priority:'priority', 'move out':'move out', ttb:'ttb', general:'general'
+  }
+  return map[v.toLowerCase().trim()] || v.trim()
+}
+
+function parseCsv(text) {
+  const lines = text.trim().split(/\r?\n/).filter(l => l.trim())
+  if (lines.length < 2) return { headers: [], rows: [] }
+  // detect delimiter: tab or comma
+  const delim = lines[0].includes('\t') ? '\t' : ','
+  const splitLine = line => {
+    if (delim === ',') {
+      // simple CSV split respecting quotes
+      const cells = []
+      let cur = '', inQ = false
+      for (const ch of line + ',') {
+        if (ch === '"') { inQ = !inQ }
+        else if (ch === ',' && !inQ) { cells.push(cur.trim()); cur = '' }
+        else cur += ch
+      }
+      return cells
+    }
+    return line.split('\t').map(s => s.trim())
+  }
+  const headers = splitLine(lines[0])
+  const rows = lines.slice(1).map(l => {
+    const cells = splitLine(l)
+    const obj = {}
+    headers.forEach((h, i) => { obj[h] = cells[i] || '' })
+    return obj
+  })
+  return { headers, rows }
+}
+
+function autoMapColumns(headers) {
+  const normalize = s => s.toLowerCase().replace(/[^a-z0-9]/g,'')
+  const hints = {
+    record_date:         ['date','recorddate','leaddate'],
+    client_name:         ['clientname','client','name','contact'],
+    rep_name:            ['rep','repname','salesrep','agent'],
+    frequency:           ['frequency','freq','service','servicetype'],
+    price_per_clean:     ['recurringprice','priceperclean','recurprice','price'],
+    initial_clean_price: ['initialcleanprice','initialprice','deepcleanprice'],
+    quote_amount:        ['quoteamount','quote','amount'],
+    converted:           ['converted','closed','sold'],
+    initial_clean_booked:['initialcleanbooked','initialbooked','icbooked'],
+    recurring_retained:  ['recurringretained','recurring','retained'],
+    lead_source:         ['leadsource','source','howtheyheard'],
+    reason:              ['reason','reasonnotconverted','whynotclosed'],
+    notes:               ['notes','note','comments'],
+  }
+  const mapping = {}
+  for (const [colKey, patterns] of Object.entries(hints)) {
+    for (const h of headers) {
+      if (patterns.includes(normalize(h))) { mapping[colKey] = h; break }
+    }
+  }
+  return mapping
+}
+
+function ImportModal({ onClose, onImported }) {
+  const [step, setStep] = useState(1) // 1=paste, 2=map, 3=preview
+  const [raw, setRaw] = useState('')
+  const [parsed, setParsed] = useState(null)
+  const [mapping, setMapping] = useState({})
+  const [preview, setPreview] = useState([])
+  const [importing, setImporting] = useState(false)
+  const [result, setResult] = useState(null)
+
+  const handleParse = () => {
+    const { headers, rows } = parseCsv(raw)
+    if (!headers.length) return alert('Could not parse — paste your spreadsheet data (copy all cells from Google Sheets or Excel)')
+    const autoMap = autoMapColumns(headers)
+    setParsed({ headers, rows })
+    setMapping(autoMap)
+    setStep(2)
+  }
+
+  const buildPreview = () => {
+    const rows = parsed.rows.slice(0, 5).map(row => mapRow(row, mapping))
+    setPreview(rows)
+    setStep(3)
+  }
+
+  const mapRow = (row, map) => {
+    const d = parseDate(row[map.record_date])
+    return {
+      record_date:          d,
+      client_name:          row[map.client_name] || '',
+      rep_name:             row[map.rep_name] || 'Lexi Ledom',
+      frequency:            parseFreq(row[map.frequency]),
+      price_per_clean:      row[map.price_per_clean] ? parseFloat(row[map.price_per_clean].replace(/[$,]/g,'')) : null,
+      initial_clean_price:  row[map.initial_clean_price] ? parseFloat(row[map.initial_clean_price].replace(/[$,]/g,'')) : null,
+      quote_amount:         row[map.quote_amount] ? parseFloat(row[map.quote_amount].replace(/[$,]/g,'')) : null,
+      converted:            parseBool(row[map.converted]),
+      initial_clean_booked: parseBool(row[map.initial_clean_booked]),
+      recurring_retained:   parseBool(row[map.recurring_retained]),
+      lead_source:          row[map.lead_source] || '',
+      reason:               row[map.reason] || '',
+      notes:                row[map.notes] || '',
+    }
+  }
+
+  const doImport = async () => {
+    setImporting(true)
+    const leads = parsed.rows.map(row => mapRow(row, mapping)).filter(r => r.record_date)
+    try {
+      const res = await apiFetch('/api/leads/bulk', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ leads }),
+      })
+      const data = await res.json()
+      setResult(data)
+    } catch(e) {
+      setResult({ ok: false, error: e.message })
+    } finally {
+      setImporting(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 overflow-y-auto">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl my-4">
+        <div className="flex items-center justify-between p-5 border-b border-gray-100">
+          <div>
+            <h3 className="font-semibold text-ink">Import Leads from Spreadsheet</h3>
+            <p className="text-xs text-gray-400 mt-0.5">Step {step} of 3 — {step===1?'Paste data':step===2?'Map columns':'Preview & import'}</p>
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-2xl leading-none">&times;</button>
+        </div>
+
+        <div className="p-5">
+          {result ? (
+            <div className="text-center py-6">
+              {result.ok ? (
+                <>
+                  <p className="text-3xl mb-3">✅</p>
+                  <p className="text-xl font-bold text-ok mb-1">{result.imported} leads imported!</p>
+                  {result.skipped > 0 && <p className="text-sm text-gray-400">{result.skipped} rows skipped (missing date)</p>}
+                  {result.errors?.length > 0 && (
+                    <div className="mt-3 text-left text-xs text-danger bg-red-50 rounded-lg p-3 max-h-32 overflow-y-auto">
+                      {result.errors.map((e,i) => <div key={i}>{e.row}: {e.error}</div>)}
+                    </div>
+                  )}
+                  <button onClick={() => { onImported(); onClose() }} className="btn-primary mt-5">Done — reload leads</button>
+                </>
+              ) : (
+                <>
+                  <p className="text-danger font-medium">Import failed: {result.error}</p>
+                  <button onClick={() => setResult(null)} className="btn-secondary mt-3 text-sm">Try again</button>
+                </>
+              )}
+            </div>
+          ) : step === 1 ? (
+            <div>
+              <p className="text-sm text-gray-600 mb-3">
+                Open your June leads spreadsheet → select all cells → Copy → paste below.<br/>
+                <span className="text-gray-400 text-xs">Works with Google Sheets, Excel, or any CSV. First row must be column headers.</span>
+              </p>
+              <p className="text-xs font-medium text-gray-500 mb-1">Recognized column names include: <span className="text-gray-400">Date, Client Name, Rep, Frequency, Quote Amount, Recurring Price, Initial Clean Price, Converted, Recurring Retained, Lead Source, Reason, Notes</span></p>
+              <textarea
+                className="form-input font-mono text-xs"
+                rows={10}
+                placeholder={"Date\tClient Name\tRep\tFrequency\tQuote\tConverted\n6/1/2026\tSarah Smith\tLexi Ledom\tBiweekly\t185\tY\n6/2/2026\tJohn Doe\tLexi Ledom\tWeekly\t\tN"}
+                value={raw}
+                onChange={e => setRaw(e.target.value)}
+              />
+              <div className="flex justify-end mt-3 gap-3">
+                <button onClick={onClose} className="text-sm text-gray-500 px-4 py-2">Cancel</button>
+                <button onClick={handleParse} disabled={!raw.trim()} className="btn-primary text-sm">Parse →</button>
+              </div>
+            </div>
+          ) : step === 2 ? (
+            <div>
+              <p className="text-sm text-gray-600 mb-4">
+                Found <strong>{parsed.headers.length}</strong> columns, <strong>{parsed.rows.length}</strong> rows. Map your columns to the fields below:
+              </p>
+              <div className="grid grid-cols-2 gap-x-6 gap-y-2 max-h-80 overflow-y-auto pr-1">
+                {IMPORT_COLS.map(col => (
+                  <div key={col.key} className="flex items-center gap-2">
+                    <div className="w-40 flex-shrink-0">
+                      <p className="text-xs font-medium text-gray-700">{col.label}</p>
+                      {col.hint && <p className="text-xs text-gray-400">{col.hint}</p>}
+                    </div>
+                    <select
+                      className="form-input text-xs py-1 flex-1"
+                      value={mapping[col.key] || ''}
+                      onChange={e => setMapping(m => ({ ...m, [col.key]: e.target.value || undefined }))}
+                    >
+                      <option value="">— skip —</option>
+                      {parsed.headers.map(h => <option key={h} value={h}>{h}</option>)}
+                    </select>
+                  </div>
+                ))}
+              </div>
+              <div className="flex justify-between mt-4 gap-3">
+                <button onClick={() => setStep(1)} className="text-sm text-gray-500 px-4 py-2">← Back</button>
+                <div className="flex gap-3">
+                  <button onClick={onClose} className="text-sm text-gray-500 px-4 py-2">Cancel</button>
+                  <button onClick={buildPreview} disabled={!mapping.record_date} className="btn-primary text-sm">Preview →</button>
+                </div>
+              </div>
+              {!mapping.record_date && <p className="text-xs text-danger mt-2">Date column is required</p>}
+            </div>
+          ) : (
+            <div>
+              <p className="text-sm text-gray-600 mb-3">
+                Preview of first 5 rows (total: <strong>{parsed.rows.length}</strong> leads). Rows without a valid date will be skipped.
+              </p>
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs min-w-[600px] border border-gray-100 rounded-lg overflow-hidden">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      {['Date','Client','Rep','Freq','Quote','Conv?','Recur?','Source'].map(h => (
+                        <th key={h} className="text-left px-2 py-1.5 font-medium text-gray-500 border-b border-gray-100">{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {preview.map((r, i) => (
+                      <tr key={i} className={`border-b border-gray-50 ${!r.record_date ? 'bg-red-50' : ''}`}>
+                        <td className="px-2 py-1.5 text-gray-600">{r.record_date || <span className="text-danger">invalid</span>}</td>
+                        <td className="px-2 py-1.5 font-medium text-ink">{r.client_name || '—'}</td>
+                        <td className="px-2 py-1.5 text-gray-500">{r.rep_name}</td>
+                        <td className="px-2 py-1.5 text-gray-500">{r.frequency || '—'}</td>
+                        <td className="px-2 py-1.5 text-gray-500">{r.price_per_clean || r.quote_amount ? `$${r.price_per_clean || r.quote_amount}` : '—'}</td>
+                        <td className="px-2 py-1.5 text-center">{r.converted ? <span className="text-ok font-bold">Y</span> : <span className="text-gray-300">N</span>}</td>
+                        <td className="px-2 py-1.5 text-center">{r.recurring_retained ? <span className="text-brand font-bold">Y</span> : <span className="text-gray-300">N</span>}</td>
+                        <td className="px-2 py-1.5 text-gray-400">{r.lead_source || '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {preview.some(r => !r.record_date) && (
+                <p className="text-xs text-amber-600 bg-amber-50 px-3 py-2 rounded-lg mt-2">
+                  Some rows have invalid dates — go back and check your Date column mapping.
+                </p>
+              )}
+              <div className="flex justify-between mt-4 gap-3">
+                <button onClick={() => setStep(2)} className="text-sm text-gray-500 px-4 py-2">← Back</button>
+                <div className="flex gap-3">
+                  <button onClick={onClose} className="text-sm text-gray-500 px-4 py-2">Cancel</button>
+                  <button onClick={doImport} disabled={importing || preview.some(r=>!r.record_date)} className="btn-primary text-sm">
+                    {importing ? 'Importing…' : `Import all ${parsed.rows.length} leads →`}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function Leads() {
   const [leads, setLeads] = useState([])
   const [reps, setReps] = useState([])
@@ -173,6 +473,7 @@ export default function Leads() {
   const [searchInput, setSearchInput] = useState('')
   const [search, setSearch] = useState('')
   const [showForm, setShowForm] = useState(false)
+  const [showImport, setShowImport] = useState(false)
   const [editId, setEditId] = useState(null)
   const [form, setForm] = useState(BLANK_FORM)
   const [saving, setSaving] = useState(false)
@@ -314,7 +615,7 @@ export default function Leads() {
       <div className="flex items-start justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold text-ink">Client Log</h1>
-          <p className="text-sm text-gray-500 mt-0.5">Lead tracking — {monthLabel} · <span className="text-[11px] text-gray-400">🤖 new closes auto via GHL · Zapier (Step 5. Accepted) · ✏️ quotes &amp; details updated manually</span></p>
+          <p className="text-sm text-gray-500 mt-0.5">All leads — {monthLabel} · <span className="text-[11px] text-gray-400">includes unquoted leads · ✏️ add manually or use ↑ Import CSV when Zapier is down</span></p>
         </div>
         <div className="flex gap-2 flex-wrap justify-end">
           <button onClick={() => exportCsv(agencyFilename, agencyRows)} className="btn-secondary text-sm">
@@ -322,6 +623,9 @@ export default function Leads() {
           </button>
           <button onClick={() => exportCsv(exportFilename, visible)} className="btn-secondary text-sm">
             ↓ Full Export
+          </button>
+          <button onClick={() => setShowImport(true)} className="btn-secondary text-sm">
+            ↑ Import CSV
           </button>
           <button onClick={() => { setEditId(null); setForm(BLANK_FORM); setShowForm(true) }} className="btn-primary text-sm">
             + Add Lead
@@ -476,6 +780,14 @@ export default function Leads() {
           </tbody>
         </table>
       </div>
+
+      {/* Import modal */}
+      {showImport && (
+        <ImportModal
+          onClose={() => setShowImport(false)}
+          onImported={() => { load(); setShowImport(false) }}
+        />
+      )}
 
       {/* Add/Edit lead modal */}
       {showForm && (

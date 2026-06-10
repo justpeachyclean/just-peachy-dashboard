@@ -153,6 +153,79 @@ router.get('/', (req, res) => {
   res.json(enriched)
 })
 
+// POST /api/leads/bulk — import multiple leads at once (manual catch-up when Zapier is down)
+router.post('/bulk', (req, res) => {
+  const { leads } = req.body
+  if (!Array.isArray(leads) || leads.length === 0) return res.status(400).json({ error: 'leads array required' })
+
+  const ANNUAL_VISITS_MAP = { weekly:52, biweekly:26, 'bi-weekly':26, 'tri-weekly':17, 'every 4 weeks':13, monthly:13 }
+  const RECURRING_VISITS_MAP = { weekly:51, biweekly:25, 'bi-weekly':25, 'tri-weekly':16, 'every 4 weeks':12, monthly:12 }
+
+  const stmt = db.prepare(`
+    INSERT INTO lead_records
+      (record_date, client_name, frequency, price_per_clean, quote_amount, initial_clean_price,
+       converted, recurring_retained, initial_clean_booked, lead_source, used_before, reason,
+       rep_name, month, source, notes, annual_value)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+  `)
+
+  let imported = 0
+  let skipped = 0
+  const errors = []
+
+  const tx = db.transaction(() => {
+    for (const lead of leads) {
+      if (!lead.record_date) { skipped++; continue }
+      try {
+        const month = lead.record_date.slice(0, 7)
+        const freqKey = (lead.frequency || '').toLowerCase().trim()
+        const recurring = RECURRING_VISITS_MAP[freqKey]
+        const initPrice = lead.initial_clean_price ? parseFloat(lead.initial_clean_price) : null
+        const recPrice  = lead.price_per_clean ? parseFloat(lead.price_per_clean) : null
+        const quoteAmt  = lead.quote_amount ? parseFloat(lead.quote_amount) : null
+
+        let annualVal = null
+        if (recurring != null && (initPrice || recPrice)) {
+          annualVal = Math.round((initPrice || 0) + (recPrice || 0) * recurring)
+        } else if (ANNUAL_VISITS_MAP[freqKey] && (recPrice || quoteAmt)) {
+          annualVal = Math.round((recPrice || quoteAmt) * ANNUAL_VISITS_MAP[freqKey])
+        }
+
+        stmt.run(
+          lead.record_date,
+          lead.client_name ?? null,
+          lead.frequency ?? null,
+          recPrice,
+          quoteAmt,
+          initPrice,
+          lead.converted ? 1 : 0,
+          lead.recurring_retained ? 1 : 0,
+          lead.initial_clean_booked ? 1 : 0,
+          lead.lead_source ?? null,
+          lead.used_before ?? null,
+          lead.reason ?? null,
+          lead.rep_name ?? 'Lexi Ledom',
+          month,
+          'import',
+          lead.notes ?? null,
+          annualVal
+        )
+        imported++
+
+        if (lead.recurring_retained) {
+          createCareTimeline(lead.client_name || 'Unknown', lead.frequency, lead.record_date)
+        }
+      } catch (err) {
+        errors.push({ row: lead.client_name || lead.record_date, error: err.message })
+        skipped++
+      }
+    }
+  })
+
+  tx()
+  res.json({ ok: true, imported, skipped, errors })
+})
+
 // POST /api/leads — manual entry or Zapier webhook
 router.post('/', (req, res) => {
   const {

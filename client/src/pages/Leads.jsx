@@ -181,7 +181,8 @@ const IMPORT_COLS = [
 
 function parseDate(raw) {
   if (!raw) return null
-  const s = raw.trim()
+  // Strip any time component (e.g. "06/01/26 10:57 AM" → "06/01/26")
+  const s = raw.trim().split(/\s+/)[0]
   // YYYY-MM-DD already fine
   if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s
   // M/D/YYYY or MM/DD/YYYY
@@ -191,6 +192,12 @@ function parseDate(raw) {
   const m2 = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2})$/)
   if (m2) return `20${m2[3]}-${m2[1].padStart(2,'0')}-${m2[2].padStart(2,'0')}`
   return null
+}
+
+function normalizeRep(name) {
+  const n = (name || '').trim().toLowerCase()
+  if (n === 'lexi') return 'Lexi Ledom'
+  return (name || '').trim() || 'Lexi Ledom'
 }
 
 function parseBool(v) {
@@ -240,26 +247,29 @@ function parseCsv(text) {
 }
 
 function autoMapColumns(headers) {
-  const normalize = s => s.toLowerCase().replace(/[^a-z0-9]/g,'')
-  const hints = {
-    record_date:         ['date','recorddate','leaddate'],
-    client_name:         ['clientname','client','name','contact'],
-    rep_name:            ['rep','repname','salesrep','agent'],
-    frequency:           ['frequency','freq','service','servicetype'],
-    price_per_clean:     ['recurringprice','priceperclean','recurprice','price'],
-    initial_clean_price: ['initialcleanprice','initialprice','deepcleanprice'],
-    quote_amount:        ['quoteamount','quote','amount'],
-    converted:           ['converted','closed','sold'],
-    initial_clean_booked:['initialcleanbooked','initialbooked','icbooked'],
-    recurring_retained:  ['recurringretained','recurring','retained'],
-    lead_source:         ['leadsource','source','howtheyheard'],
-    reason:              ['reason','reasonnotconverted','whynotclosed'],
-    notes:               ['notes','note','comments'],
-  }
+  const norm = s => s.toLowerCase().replace(/[^a-z0-9]/g,'')
+  // Matching: normalized header must equal OR start with a pattern
+  const hints = [
+    ['record_date',         ['date','recorddate','leaddate']],
+    ['client_name',         ['clientname','callername','caller','client','name','contact']],
+    ['rep_name',            ['salesrep','repname','rep']],
+    ['frequency',           ['desiredservice','frequency','freq','servicetype']],
+    ['price_per_clean',     ['recurringprice','priceperclean','recurprice']],
+    ['initial_clean_price', ['initialcleanprice','initialprice','deepclean']],
+    ['quote_amount',        ['estimategiven','quoteamount','quote','estimate','amount']],
+    ['converted',           ['converted','closed','sold']],
+    ['initial_clean_booked',['initialcleanbooked','initialbooked','icbooked']],
+    ['recurring_retained',  ['recurringretained']],
+    ['lead_source',         ['leadsource','leadinitial','initialcontact','howthey']],
+    ['used_before',         ['usedbefore','usedaclean','usedservice']],
+    ['reason',              ['ifnoreason','reasonnot','whynot','reason']],
+    ['notes',               ['notes','note','occasion','comments']],
+  ]
   const mapping = {}
-  for (const [colKey, patterns] of Object.entries(hints)) {
+  for (const [colKey, patterns] of hints) {
     for (const h of headers) {
-      if (patterns.includes(normalize(h))) { mapping[colKey] = h; break }
+      const n = norm(h)
+      if (patterns.some(p => n === p || n.startsWith(p))) { mapping[colKey] = h; break }
     }
   }
   return mapping
@@ -294,7 +304,7 @@ function ImportModal({ onClose, onImported }) {
     return {
       record_date:          d,
       client_name:          row[map.client_name] || '',
-      rep_name:             row[map.rep_name] || 'Lexi Ledom',
+      rep_name:             normalizeRep(row[map.rep_name]),
       frequency:            parseFreq(row[map.frequency]),
       price_per_clean:      row[map.price_per_clean] ? parseFloat(row[map.price_per_clean].replace(/[$,]/g,'')) : null,
       initial_clean_price:  row[map.initial_clean_price] ? parseFloat(row[map.initial_clean_price].replace(/[$,]/g,'')) : null,

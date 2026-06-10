@@ -55,6 +55,7 @@ export default function BonusTracker() {
 
   // Rep modal
   const [autoCalcMsg, setAutoCalcMsg] = useState('')
+  const [autoCalcResults, setAutoCalcResults] = useState(null)
   const [autoCalcLoading, setAutoCalcLoading] = useState(false)
   const [autoCalcMonth, setAutoCalcMonth] = useState(() => {
     const n = new Date()
@@ -211,6 +212,7 @@ export default function BonusTracker() {
       if (!res.ok) throw new Error(await res.text())
       const data = await res.json()
       setAutoCalcMsg(`Calculated ${data.calculated} rep${data.calculated !== 1 ? 's' : ''} for ${autoCalcMonth}`)
+      setAutoCalcResults(data.results || [])
       loadAll()
     } catch (err) {
       setAutoCalcMsg(`Error: ${err.message}`)
@@ -264,10 +266,56 @@ export default function BonusTracker() {
         </div>
       </div>
 
-      {/* Auto-calc status message */}
+      {/* Auto-calc results breakdown */}
       {autoCalcMsg && (
-        <div className={`mb-4 px-4 py-2.5 rounded-lg text-sm font-medium ${autoCalcMsg.startsWith('Error') ? 'bg-danger/10 text-danger' : 'bg-ok/10 text-ok'}`}>
-          {autoCalcMsg}
+        <div className={`mb-4 rounded-xl border ${autoCalcMsg.startsWith('Error') ? 'border-danger/20 bg-danger/5' : 'border-ok/20 bg-ok/5'}`}>
+          <div className={`px-4 py-2.5 text-sm font-medium ${autoCalcMsg.startsWith('Error') ? 'text-danger' : 'text-ok'}`}>
+            {autoCalcMsg}
+          </div>
+          {autoCalcResults && autoCalcResults.length > 0 && (
+            <div className="px-4 pb-4 overflow-x-auto">
+              <table className="w-full text-xs min-w-[600px]">
+                <thead>
+                  <tr className="text-gray-400 uppercase border-b border-gray-100">
+                    <th className="text-left py-2 pr-3 font-medium">Rep</th>
+                    <th className="text-right py-2 px-2 font-medium">Quotes Given</th>
+                    <th className="text-right py-2 px-2 font-medium">Closed</th>
+                    <th className="text-right py-2 px-2 font-medium">Close Rate</th>
+                    <th className="text-right py-2 px-2 font-medium">Recurring Closes</th>
+                    <th className="text-right py-2 px-2 font-medium">W/BW Closes</th>
+                    <th className="text-right py-2 px-2 font-medium">W/BW Ratio</th>
+                    <th className="text-center py-2 px-2 font-medium">Tier</th>
+                    <th className="text-right py-2 pl-2 font-medium">Bonus</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {autoCalcResults.map((r, i) => {
+                    const closeRate = r.quotes_given > 0 ? r.closed_sales / r.quotes_given : 0
+                    const wbwRatio = r.recurring_closed > 0 ? r.weekly_biweekly_closed / r.recurring_closed : null
+                    const qualifies = closeRate >= 0.40
+                    return (
+                      <tr key={i} className="border-b border-gray-50">
+                        <td className="py-2 pr-3 font-semibold text-ink">{r.rep}</td>
+                        <td className="py-2 px-2 text-right text-gray-600">{r.quotes_given}</td>
+                        <td className="py-2 px-2 text-right text-gray-600">{r.closed_sales}</td>
+                        <td className={`py-2 px-2 text-right font-semibold ${closeRate >= 0.40 ? 'text-ok' : 'text-danger'}`}>
+                          {(closeRate * 100).toFixed(1)}%
+                          {!qualifies && <span className="text-danger ml-1 font-normal">(need ≥40%)</span>}
+                        </td>
+                        <td className="py-2 px-2 text-right text-gray-600">{r.recurring_closed}</td>
+                        <td className="py-2 px-2 text-right text-gray-600">{r.weekly_biweekly_closed}</td>
+                        <td className={`py-2 px-2 text-right font-semibold ${wbwRatio === null ? 'text-gray-300' : wbwRatio >= 0.75 ? 'text-ok' : wbwRatio >= 0.50 ? 'text-amber-500' : 'text-gray-400'}`}>
+                          {wbwRatio === null ? '—' : `${(wbwRatio * 100).toFixed(0)}%`}
+                        </td>
+                        <td className="py-2 px-2 text-center"><TierBadge tier={r.tier} /></td>
+                        <td className="py-2 pl-2 text-right font-bold text-ink">{r.bonus_amount > 0 ? fmt$(r.bonus_amount) : '—'}</td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       )}
 

@@ -227,15 +227,15 @@ router.post('/auto-calculate', (req, res) => {
       if (!l.converted) continue
       const nameKey = (l.client_name || '').toLowerCase().trim()
       const freqKey = (l.frequency || '').toLowerCase().trim()
-      const isRecurring = freqKey && !ONE_TIME_FREQS.has(freqKey)
+      // Use recurring_retained flag as ground truth — more reliable than frequency
+      // (imported leads may have frequency="general" even when they ARE recurring)
+      const isRecurring = !!l.recurring_retained
       // If recurring client cancelled same month → disqualified from bonus entirely
       if (isRecurring && cancelledSet.has(nameKey)) continue
       closed_sales++
       if (isRecurring) {
         recurring_closed++
-        if (['weekly','biweekly','bi-weekly','tri-weekly','every 4 weeks','monthly'].includes(freqKey)) {
-          weekly_biweekly_closed += ['weekly','biweekly','bi-weekly'].includes(freqKey) ? 1 : 0
-        }
+        if (['weekly','biweekly','bi-weekly'].includes(freqKey)) weekly_biweekly_closed++
       }
     }
 

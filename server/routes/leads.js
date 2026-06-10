@@ -256,6 +256,7 @@ router.post('/', (req, res) => {
     source = 'manual',
     external_id,
     notes,
+    is_flex = 0,
   } = req.body
 
   if (!record_date) return res.status(400).json({ error: 'record_date required' })
@@ -273,8 +274,8 @@ router.post('/', (req, res) => {
     INSERT INTO lead_records
       (record_date, client_name, frequency, price_per_clean, quote_amount, initial_clean_price,
        converted, recurring_retained, initial_clean_booked, lead_source, used_before, reason,
-       rep_name, month, source, external_id, notes, annual_value)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+       rep_name, month, source, external_id, notes, annual_value, is_flex)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     ON CONFLICT(external_id) DO UPDATE SET
       record_date           = excluded.record_date,
       client_name           = excluded.client_name,
@@ -299,7 +300,7 @@ router.post('/', (req, res) => {
     converted ? 1 : 0, recurring_retained ? 1 : 0, initial_clean_booked ? 1 : 0,
     lead_source ?? null, used_before ?? null, reason ?? null,
     rep_name ?? null, month, source, external_id ?? null, notes ?? null,
-    annualVal
+    annualVal, is_flex ? 1 : 0
   )
 
   audit(req, 'lead_added', `${client_name || 'Unknown'}`)
@@ -324,7 +325,7 @@ router.patch('/:id', (req, res) => {
   const {
     record_date, client_name, frequency, price_per_clean, quote_amount, initial_clean_price,
     converted, recurring_retained, initial_clean_booked, lead_source, used_before, reason,
-    rep_name, notes,
+    rep_name, notes, is_flex,
   } = req.body
 
   const updated = {
@@ -342,6 +343,7 @@ router.patch('/:id', (req, res) => {
     reason:                reason                !== undefined ? reason                : existing.reason,
     rep_name:              rep_name              !== undefined ? rep_name              : existing.rep_name,
     notes:                 notes                 !== undefined ? notes                 : existing.notes,
+    is_flex:               is_flex               !== undefined ? (is_flex ? 1 : 0)    : existing.is_flex,
     month:                 (record_date ?? existing.record_date).slice(0, 7),
   }
 
@@ -349,14 +351,14 @@ router.patch('/:id', (req, res) => {
     UPDATE lead_records SET
       record_date=?, client_name=?, frequency=?, price_per_clean=?, quote_amount=?, initial_clean_price=?,
       converted=?, recurring_retained=?, initial_clean_booked=?, lead_source=?, used_before=?, reason=?,
-      rep_name=?, notes=?, month=?
+      rep_name=?, notes=?, month=?, is_flex=?
     WHERE id=?
   `).run(
     updated.record_date, updated.client_name, updated.frequency,
     updated.price_per_clean, updated.quote_amount, updated.initial_clean_price,
     updated.converted, updated.recurring_retained, updated.initial_clean_booked,
     updated.lead_source, updated.used_before, updated.reason,
-    updated.rep_name, updated.notes, updated.month,
+    updated.rep_name, updated.notes, updated.month, updated.is_flex,
     existing.id
   )
   audit(req, 'lead_updated', `ID ${existing.id}`)

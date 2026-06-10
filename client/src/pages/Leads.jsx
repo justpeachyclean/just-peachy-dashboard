@@ -156,6 +156,7 @@ const BLANK_FORM = {
   converted: false,
   initial_clean_booked: false,
   recurring_retained: false,
+  is_flex: false,
   lead_source: '',
   used_before: '',
   reason: '',
@@ -545,6 +546,7 @@ export default function Leads() {
       converted:            !!r.converted,
       initial_clean_booked: !!r.initial_clean_booked,
       recurring_retained:   !!r.recurring_retained,
+      is_flex:              !!r.is_flex,
       lead_source:          r.lead_source || '',
       used_before:          r.used_before || '',
       reason:               r.reason || '',
@@ -566,6 +568,7 @@ export default function Leads() {
       converted:            form.converted            ? 1 : 0,
       initial_clean_booked: form.initial_clean_booked ? 1 : 0,
       recurring_retained:   form.recurring_retained   ? 1 : 0,
+      is_flex:              form.is_flex              ? 1 : 0,
       source: 'manual',
     }
     if (editId) {
@@ -779,7 +782,9 @@ export default function Leads() {
                 </td>
                 <td className="py-2 px-2 text-center">
                   {r.recurring_retained
-                    ? <span className="text-xs font-bold text-brand">Y</span>
+                    ? r.is_flex
+                      ? <span className="text-xs font-semibold text-purple-500 bg-purple-50 px-1.5 py-0.5 rounded-full">Flex</span>
+                      : <span className="text-xs font-bold text-brand">Y</span>
                     : <span className="text-xs text-gray-300">N</span>}
                 </td>
                 <td className="py-2 px-2 text-gray-400 text-xs">{r.lead_source || '—'}</td>
@@ -925,6 +930,13 @@ export default function Leads() {
                   <label className="flex items-center gap-2 cursor-pointer">
                     <input type="checkbox" checked={!!form.recurring_retained} onChange={set('recurring_retained')} className="w-4 h-4 accent-brand" />
                     <span className="text-sm text-gray-700">Recurring Retained</span>
+                  </label>
+                )}
+                {form.converted && form.recurring_retained && (
+                  <label className="flex items-center gap-2 cursor-pointer" title="Flex clients book on-demand (not a fixed schedule). Excluded from bonus calculation.">
+                    <input type="checkbox" checked={!!form.is_flex} onChange={set('is_flex')} className="w-4 h-4 accent-purple-500" />
+                    <span className="text-sm text-gray-700">Flex Client</span>
+                    <span className="text-xs text-gray-400">(excludes from bonus)</span>
                   </label>
                 )}
               </div>

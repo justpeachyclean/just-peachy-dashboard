@@ -157,7 +157,7 @@ router.get('/qualifying-sales', (req, res) => {
   const monthEnd   = `${year}-${mon}-31`
 
   const leads = db.prepare(`
-    SELECT id, client_name, frequency, rep_name, record_date, initial_clean_price, price_per_clean
+    SELECT id, client_name, frequency, rep_name, record_date, initial_clean_price, price_per_clean, is_flex
     FROM lead_records
     WHERE month = ? AND recurring_retained = 1
     ORDER BY rep_name COLLATE NOCASE, record_date
@@ -179,7 +179,7 @@ router.get('/qualifying-sales', (req, res) => {
   const enriched = leads.map(l => {
     const key = (l.client_name || '').toLowerCase().trim()
     const cancelDate = cancelMap[key] ?? null
-    return { ...l, disqualified: !!cancelDate, cancel_date: cancelDate }
+    return { ...l, disqualified: !!cancelDate || !!l.is_flex, cancel_date: cancelDate }
   })
 
   res.json(enriched)
@@ -209,7 +209,7 @@ router.post('/auto-calculate', (req, res) => {
     // Get all leads for this rep/month, then filter out same-month cancellations
     const leads = db.prepare(`
       SELECT client_name, converted, recurring_retained, frequency,
-             price_per_clean, quote_amount
+             price_per_clean, quote_amount, is_flex
       FROM lead_records WHERE month = ? AND rep_name = ? COLLATE NOCASE
     `).all(month, rep.name)
 
@@ -222,6 +222,7 @@ router.post('/auto-calculate', (req, res) => {
 
     let quotes_given = 0, closed_sales = 0, recurring_closed = 0, weekly_biweekly_closed = 0
     for (const l of leads) {
+      if (l.is_flex) continue  // flex clients excluded from bonus entirely
       if (l.price_per_clean != null || l.quote_amount != null) quotes_given++
       if (!l.converted) continue
       const nameKey = (l.client_name || '').toLowerCase().trim()

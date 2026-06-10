@@ -143,6 +143,7 @@ const migrations = [
     notes            TEXT,
     created_at       TEXT DEFAULT (datetime('now'))
   )`,
+  `ALTER TABLE lead_records ADD COLUMN is_flex INTEGER DEFAULT 0`,
 ]
 for (const sql of migrations) {
   try { db.exec(sql) } catch (_) { /* column already exists — safe to ignore */ }

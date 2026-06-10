@@ -213,18 +213,28 @@ router.post('/auto-calculate', (req, res) => {
       FROM lead_records WHERE month = ? AND rep_name = ? COLLATE NOCASE
     `).all(month, rep.name)
 
+    // One-time service types — do NOT count toward recurring_closed
+    const ONE_TIME_FREQS = new Set([
+      'one_time','one-time','one time','ttb','general','priority',
+      'move out','move in','move out clean','move in clean',
+      'vacation clean','post construction','pcc','vc',
+    ])
+
     let quotes_given = 0, closed_sales = 0, recurring_closed = 0, weekly_biweekly_closed = 0
     for (const l of leads) {
       if (l.price_per_clean != null || l.quote_amount != null) quotes_given++
       if (!l.converted) continue
       const nameKey = (l.client_name || '').toLowerCase().trim()
-      const isRecurring = l.frequency && !['one_type','one-time','one time',''].includes(l.frequency.toLowerCase())
+      const freqKey = (l.frequency || '').toLowerCase().trim()
+      const isRecurring = freqKey && !ONE_TIME_FREQS.has(freqKey)
       // If recurring client cancelled same month → disqualified from bonus entirely
       if (isRecurring && cancelledSet.has(nameKey)) continue
       closed_sales++
       if (isRecurring) {
         recurring_closed++
-        if (['weekly','biweekly','bi-weekly'].includes((l.frequency || '').toLowerCase())) weekly_biweekly_closed++
+        if (['weekly','biweekly','bi-weekly','tri-weekly','every 4 weeks','monthly'].includes(freqKey)) {
+          weekly_biweekly_closed += ['weekly','biweekly','bi-weekly'].includes(freqKey) ? 1 : 0
+        }
       }
     }
 
@@ -234,11 +244,15 @@ router.post('/auto-calculate', (req, res) => {
       const closeRate = counts.quotes_given > 0 ? counts.closed_sales / counts.quotes_given : 0
       const recurringRatio = counts.recurring_closed > 0 ? counts.weekly_biweekly_closed / counts.recurring_closed : 0
 
+      // Tier thresholds — must match BonusTracker.jsx TIERS display
+      // Tier 3: close ≥ 40% + W/BW ratio ≥ 75% → $700
+      // Tier 2: close ≥ 40% + W/BW ratio ≥ 50% → $400
+      // Tier 1: close ≥ 40% only             → $200
       let tier = 0, bonus_amount = 0
       if (closeRate >= 0.40) {
-        if (recurringRatio >= 0.50) { tier = 3; bonus_amount = counts.closed_sales * 75 }
-        else if (recurringRatio >= 0.30) { tier = 2; bonus_amount = counts.closed_sales * 50 }
-        else { tier = 1; bonus_amount = counts.closed_sales * 25 }
+        if (recurringRatio >= 0.75) { tier = 3; bonus_amount = 700 }
+        else if (recurringRatio >= 0.50) { tier = 2; bonus_amount = 400 }
+        else { tier = 1; bonus_amount = 200 }
       }
 
       db.prepare(`

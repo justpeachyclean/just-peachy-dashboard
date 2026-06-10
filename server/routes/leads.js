@@ -169,13 +169,24 @@ router.post('/bulk', (req, res) => {
     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
   `)
 
+  const dupCheck = db.prepare(`
+    SELECT COUNT(*) AS n FROM lead_records
+    WHERE record_date = ? AND LOWER(TRIM(client_name)) = LOWER(TRIM(?))
+  `)
+
   let imported = 0
   let skipped = 0
+  let duplicates = 0
   const errors = []
 
   const tx = db.transaction(() => {
     for (const lead of leads) {
       if (!lead.record_date) { skipped++; continue }
+      // Skip if a record with same date + client name already exists
+      if (lead.client_name) {
+        const { n } = dupCheck.get(lead.record_date, lead.client_name)
+        if (n > 0) { duplicates++; continue }
+      }
       try {
         const month = lead.record_date.slice(0, 7)
         const freqKey = (lead.frequency || '').toLowerCase().trim()
@@ -223,7 +234,7 @@ router.post('/bulk', (req, res) => {
   })
 
   tx()
-  res.json({ ok: true, imported, skipped, errors })
+  res.json({ ok: true, imported, skipped, duplicates, errors })
 })
 
 // POST /api/leads — manual entry or Zapier webhook

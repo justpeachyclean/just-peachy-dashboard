@@ -344,6 +344,7 @@ function ImportModal({ onClose, onImported }) {
                 <>
                   <p className="text-3xl mb-3">✅</p>
                   <p className="text-xl font-bold text-ok mb-1">{result.imported} leads imported!</p>
+                  {result.duplicates > 0 && <p className="text-sm text-gray-400">{result.duplicates} already existed — skipped (no duplicates created)</p>}
                   {result.skipped > 0 && <p className="text-sm text-gray-400">{result.skipped} rows skipped (missing date)</p>}
                   {result.errors?.length > 0 && (
                     <div className="mt-3 text-left text-xs text-danger bg-red-50 rounded-lg p-3 max-h-32 overflow-y-auto">

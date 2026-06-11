@@ -371,7 +371,9 @@ router.get('/economics', (req, res) => {
       COALESCE(SUM(CASE WHEN invoice_revenue > 0 THEN invoice_revenue ELSE revenue END), 0) AS revenue,
       COALESCE(SUM(marketing_spend), 0)  AS marketing_spend,
       COALESCE(SUM(leads_in), 0)         AS leads_in,
+      COALESCE(SUM(leads_quoted), 0)     AS leads_quoted,
       COALESCE(SUM(leads_closed), 0)     AS leads_closed,
+      COALESCE(SUM(recurring_closed), 0) AS recurring_closed,
       COALESCE(SUM(cancellations), 0)    AS cancellations,
       COALESCE(SUM(initial_cleans), 0)   AS initial_cleans,
       COALESCE(SUM(retained), 0)         AS retained,
@@ -383,12 +385,17 @@ router.get('/economics', (req, res) => {
   const ytdLeadCounts = db.prepare(`
     SELECT
       COUNT(*) AS leads_in,
-      COUNT(CASE WHEN converted=1 THEN 1 END) AS leads_closed
+      COUNT(CASE WHEN price_per_clean IS NOT NULL OR quote_amount IS NOT NULL THEN 1 END) AS leads_quoted,
+      COUNT(CASE WHEN converted=1 THEN 1 END) AS leads_closed,
+      COUNT(CASE WHEN converted=1 AND recurring_retained=1 THEN 1 END) AS recurring_closed
     FROM lead_records WHERE month LIKE ? AND month <= ?
   `).get(`${year}-%`, currentMonth)
 
-  const ytdLeadsIn     = ytdLeadCounts.leads_in > 0 ? ytdLeadCounts.leads_in     : ytdSales.leads_in
-  const ytdLeadsClosed = ytdLeadCounts.leads_in > 0 ? ytdLeadCounts.leads_closed : ytdSales.leads_closed
+  const ytdLeadsIn        = ytdLeadCounts.leads_in > 0 ? ytdLeadCounts.leads_in        : ytdSales.leads_in
+  const ytdLeadsQuoted    = ytdLeadCounts.leads_in > 0 ? ytdLeadCounts.leads_quoted    : ytdSales.leads_quoted
+  const ytdLeadsClosed    = ytdLeadCounts.leads_in > 0 ? ytdLeadCounts.leads_closed    : ytdSales.leads_closed
+  const ytdRecurringClosed = ytdLeadCounts.leads_in > 0 ? ytdLeadCounts.recurring_closed : ytdSales.recurring_closed
+  const ytdOneTimeClosed  = ytdLeadsClosed - ytdRecurringClosed
 
   // Avg recurring clients across months that have a snapshot
   const clientSnap = db.prepare(`
@@ -461,8 +468,20 @@ router.get('/economics', (req, res) => {
     ? marketingSpend / ytdLeadsIn
     : null
 
+  const cpl_quoted = ytdLeadsQuoted > 0 && marketingSpend > 0
+    ? marketingSpend / ytdLeadsQuoted
+    : null
+
   const cac = ytdLeadsClosed > 0 && marketingSpend > 0
     ? marketingSpend / ytdLeadsClosed
+    : null
+
+  const cac_recurring = ytdRecurringClosed > 0 && marketingSpend > 0
+    ? marketingSpend / ytdRecurringClosed
+    : null
+
+  const cac_onetime = ytdOneTimeClosed > 0 && marketingSpend > 0
+    ? marketingSpend / ytdOneTimeClosed
     : null
 
   const ltvCacRatio = ltv && cac ? ltv / cac : null
@@ -506,7 +525,10 @@ router.get('/economics', (req, res) => {
       recruiting_spend: recruitingSpend,
       training_spend: trainingSpend,
       leads_in: ytdLeadsIn,
+      leads_quoted: ytdLeadsQuoted,
       leads_closed: ytdLeadsClosed,
+      recurring_closed: ytdRecurringClosed,
+      one_time_closed: ytdOneTimeClosed,
       cancellations: ytdCancellations,
       new_hires: manualYTD.new_hires,
       quit: ytdQuit,
@@ -516,7 +538,10 @@ router.get('/economics', (req, res) => {
     },
     metrics: {
       cpl,
+      cpl_quoted,
       cac,
+      cac_recurring,
+      cac_onetime,
       ltv,
       ltv_cac_ratio: ltvCacRatio,
       avg_revenue_per_client: avgRevenuePerClient,

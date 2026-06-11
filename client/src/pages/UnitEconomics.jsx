@@ -89,7 +89,7 @@ export default function UnitEconomics() {
             onClick={() => {
               if (!data?.metrics) return
               const m = data.metrics
-              exportCsv(`jpc-economics-${year}.csv`, [{ year, cpl: m.cpl, cac: m.cac, ltv: m.ltv, ltv_cac_ratio: m.ltv_cac_ratio, attrition_rate: m.attrition_rate, revenue_per_rge: m.revenue_per_rge, training_cost_per_hire: m.training_cost_per_hire, cost_of_turnover: m.cost_of_turnover }])
+              exportCsv(`jpc-economics-${year}.csv`, [{ year, cpl: m.cpl, cpl_quoted: m.cpl_quoted, cac: m.cac, cac_recurring: m.cac_recurring, cac_onetime: m.cac_onetime, ltv: m.ltv, ltv_cac_ratio: m.ltv_cac_ratio, attrition_rate: m.attrition_rate, revenue_per_rge: m.revenue_per_rge, training_cost_per_hire: m.training_cost_per_hire, cost_of_turnover: m.cost_of_turnover }])
             }}
             className="btn-secondary text-sm"
           >↓ Export CSV</button>
@@ -101,7 +101,7 @@ export default function UnitEconomics() {
 
       {/* Marketing Efficiency */}
       <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-3">Marketing Efficiency</h2>
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
         <MetricCard
           label="Marketing Spend YTD"
           value={fmt$(ytd.marketing_spend)}
@@ -109,7 +109,7 @@ export default function UnitEconomics() {
           color="border-peach"
         />
         <MetricCard
-          label="Cost Per Lead"
+          label="Cost Per Lead (All)"
           value={fmt$(metrics.cpl)}
           sub="Marketing ÷ Leads In"
           color="border-peach"
@@ -120,10 +120,15 @@ export default function UnitEconomics() {
             : null}
         />
         <MetricCard
-          label="Customer Acquisition Cost"
-          value={fmt$(metrics.cac)}
-          sub="Marketing ÷ Closed"
+          label="Cost Per Lead Quoted"
+          value={fmt$(metrics.cpl_quoted)}
+          sub={ytd.leads_quoted > 0 ? `Marketing ÷ ${ytd.leads_quoted} quoted` : 'Marketing ÷ Quoted'}
           color="border-peach"
+          badge={metrics.cpl_quoted !== null && metrics.cpl_quoted < 80
+            ? <span className="text-xs text-ok font-semibold">✓ Good</span>
+            : metrics.cpl_quoted !== null
+            ? <span className="text-xs text-warn font-semibold">Watch</span>
+            : null}
         />
         <MetricCard
           label="LTV : CAC"
@@ -137,6 +142,31 @@ export default function UnitEconomics() {
               ? <span className="text-xs text-warn font-semibold">Tight</span>
               : <span className="text-xs text-danger font-semibold">Low</span>
             : null}
+        />
+      </div>
+
+      {/* CAC Breakdown */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
+        <MetricCard
+          label="CAC — All Closes"
+          value={fmt$(metrics.cac)}
+          sub={ytd.leads_closed > 0 ? `Marketing ÷ ${ytd.leads_closed} closed` : 'Marketing ÷ Closed'}
+          color="border-peach"
+        />
+        <MetricCard
+          label="CAC — Recurring"
+          value={fmt$(metrics.cac_recurring)}
+          sub={ytd.recurring_closed > 0 ? `Marketing ÷ ${ytd.recurring_closed} recurring` : 'Marketing ÷ Recurring Closes'}
+          color="border-peach"
+          badge={metrics.cac_recurring !== null && metrics.ltv !== null && metrics.cac_recurring > 0
+            ? <span className="text-xs text-gray-400 font-medium">{fmtX(metrics.ltv / metrics.cac_recurring)} LTV:CAC</span>
+            : null}
+        />
+        <MetricCard
+          label="CAC — 1-Time Clean"
+          value={fmt$(metrics.cac_onetime)}
+          sub={ytd.one_time_closed > 0 ? `Marketing ÷ ${ytd.one_time_closed} one-time` : 'Marketing ÷ 1-Time Closes'}
+          color="border-peach"
         />
       </div>
 

@@ -234,7 +234,7 @@ INSERT OR IGNORE INTO settings (key, value) VALUES
   ('avg_training_hours',        NULL),
   ('avg_hourly_labor_cost',     NULL),
   ('avg_ramp_up_days',          NULL),
-  ('qb_marketing_category',     'Advertising'),
+  ('qb_marketing_category',     '6005 *Marketing'),
   ('qb_recruiting_category',    'Recruiting'),
   ('qb_training_category',      'Training'),
   ('webhook_secret',            'change-me-before-connecting-zapier'),

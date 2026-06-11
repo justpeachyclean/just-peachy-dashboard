@@ -707,4 +707,69 @@ router.post('/termination', (req, res) => {
   res.json({ ok: true })
 })
 
+// ── QuickBooks Marketing Expense (Zapier) ──────────────────────────────────
+// POST /api/webhook/qb-expense
+// Zapier trigger: New Transaction in QB filtered to "6005 *Marketing"
+// Fields expected: txn_id, txn_date (or date), amount, memo, vendor (all optional except amount+date)
+router.post('/qb-expense', (req, res) => {
+  if (!verifySecret(req, res)) return
+
+  const {
+    txn_id,
+    txn_date,
+    date,
+    amount,
+    memo,
+    vendor,
+    category,
+  } = req.body
+
+  const rawAmount = parseFloat(amount)
+  if (!rawAmount || isNaN(rawAmount)) return res.status(400).json({ error: 'amount required and must be a number' })
+
+  const dateStr = (txn_date || date || '').toString().trim()
+  if (!dateStr) return res.status(400).json({ error: 'txn_date or date required' })
+
+  // Normalise to YYYY-MM-DD — QB sends various formats
+  let isoDate = dateStr
+  const mdy = dateStr.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/)
+  if (mdy) isoDate = `${mdy[3]}-${mdy[1].padStart(2,'0')}-${mdy[2].padStart(2,'0')}`
+  const month = isoDate.slice(0, 7)
+
+  const cat = (category || '6005 *Marketing').toString().trim()
+
+  // Unique key for idempotency — use txn_id if provided, else date+amount+vendor
+  const uniqueKey = txn_id
+    ? txn_id.toString()
+    : `${isoDate}|${rawAmount}|${(vendor || '').trim()}`
+
+  // Check for duplicate
+  const existing = db.prepare('SELECT id FROM qb_transactions WHERE txn_id = ?').get(uniqueKey)
+  if (existing) return res.json({ ok: true, skipped: true, reason: 'duplicate transaction' })
+
+  // Insert individual transaction record
+  db.prepare(`
+    INSERT INTO qb_transactions (txn_id, txn_date, month, category, amount, memo, vendor)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).run(uniqueKey, isoDate, month, cat, rawAmount, memo ?? null, vendor ?? null)
+
+  // Recompute and upsert the monthly total from all transactions for this month+category
+  const total = db.prepare(
+    'SELECT COALESCE(SUM(amount), 0) AS total FROM qb_transactions WHERE month = ? AND category = ?'
+  ).get(month, cat).total
+
+  db.prepare(`
+    INSERT INTO quickbooks_expenses (month, category, amount, synced_at)
+    VALUES (?, ?, ?, datetime('now'))
+    ON CONFLICT(month, category) DO UPDATE SET
+      amount    = excluded.amount,
+      synced_at = datetime('now')
+  `).run(month, cat, Math.round(total * 100) / 100)
+
+  db.prepare(`INSERT INTO audit_log (action_type, entity, description) VALUES ('webhook','qb_expense',?)`)
+    .run(`QB marketing: ${cat} ${isoDate} $${rawAmount} — monthly total now $${Math.round(total * 100) / 100}`)
+
+  res.json({ ok: true, month, category: cat, transaction_amount: rawAmount, monthly_total: Math.round(total * 100) / 100 })
+})
+
 module.exports = router

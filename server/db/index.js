@@ -144,6 +144,19 @@ const migrations = [
     created_at       TEXT DEFAULT (datetime('now'))
   )`,
   `ALTER TABLE lead_records ADD COLUMN is_flex INTEGER DEFAULT 0`,
+  `UPDATE settings SET value = '6005 *Marketing' WHERE key = 'qb_marketing_category'`,
+  // Individual QB transactions for idempotent marketing spend sync via Zapier
+  `CREATE TABLE IF NOT EXISTS qb_transactions (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    txn_id         TEXT UNIQUE,
+    txn_date       TEXT NOT NULL,
+    month          TEXT NOT NULL,
+    category       TEXT NOT NULL,
+    amount         REAL NOT NULL,
+    memo           TEXT,
+    vendor         TEXT,
+    created_at     TEXT DEFAULT (datetime('now'))
+  )`,
 ]
 for (const sql of migrations) {
   try { db.exec(sql) } catch (_) { /* column already exists — safe to ignore */ }

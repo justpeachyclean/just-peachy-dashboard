@@ -190,7 +190,7 @@ export default function Overview() {
           value={fmt$(summary.revenue)}
           borderColor="border-peach"
           sub={dailyGoal ? `Daily goal: ${fmt$(dailyGoal)}` : 'Set goal in Settings'}
-          source="🤖 auto via MaidCentral · Zapier"
+          source="✏️ enter monthly total in Log Data"
         />
         <KpiCard
           label="Attrition Rate"

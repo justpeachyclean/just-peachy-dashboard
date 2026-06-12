@@ -2,6 +2,7 @@ import { apiFetch } from '../AuthContext'
 import { useState } from 'react'
 
 const today = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York' }).format(new Date())
+const currentMonth = () => today().substring(0, 7)
 
 const INITIAL = {
   entry_date: today(),
@@ -28,6 +29,11 @@ export default function Entry() {
   const [showRecent, setShowRecent] = useState(false)
   const [editingId, setEditingId] = useState(null)
   const [editRevenue, setEditRevenue] = useState('')
+
+  // MTD Revenue quick-entry
+  const [revMonth, setRevMonth] = useState(currentMonth())
+  const [revAmount, setRevAmount] = useState('')
+  const [revStatus, setRevStatus] = useState(null)
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
 
@@ -91,6 +97,25 @@ export default function Entry() {
     loadRecent()
   }
 
+  const saveMtdRevenue = async (e) => {
+    e.preventDefault()
+    if (!revAmount) return
+    setRevStatus('saving')
+    try {
+      const res = await apiFetch('/api/sales', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ month: revMonth, invoice_revenue: parseFloat(revAmount) }),
+      })
+      if (!res.ok) throw new Error(await res.text())
+      setRevStatus('saved')
+      setRevAmount('')
+      setTimeout(() => setRevStatus(null), 3000)
+    } catch {
+      setRevStatus('error')
+    }
+  }
+
   return (
     <div className="max-w-2xl mx-auto">
       <div className="flex items-center justify-between mb-6">
@@ -103,11 +128,51 @@ export default function Entry() {
         </button>
       </div>
 
+      {/* MTD Revenue quick-entry */}
+      <form onSubmit={saveMtdRevenue} className="card mb-5 border border-peach bg-peach/5">
+        <h3 className="text-sm font-semibold text-gray-700 mb-1">MTD Revenue</h3>
+        <p className="text-xs text-gray-400 mb-3">Enter the month's total invoice revenue (pull from MC → Reports). Updates the Overview revenue card.</p>
+        <div className="flex items-end gap-3 flex-wrap">
+          <div>
+            <label className="form-label">Month</label>
+            <input
+              type="month"
+              className="form-input text-sm py-1.5"
+              value={revMonth}
+              onChange={e => setRevMonth(e.target.value)}
+              required
+            />
+          </div>
+          <div className="flex-1 min-w-[160px]">
+            <label className="form-label">Revenue Total ($)</label>
+            <div className="relative">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">$</span>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                className="form-input pl-7"
+                placeholder="e.g. 42000.00"
+                value={revAmount}
+                onChange={e => setRevAmount(e.target.value)}
+              />
+            </div>
+          </div>
+          <div className="flex items-center gap-3 pb-0.5">
+            <button type="submit" className="btn-primary text-sm" disabled={revStatus === 'saving'}>
+              {revStatus === 'saving' ? 'Saving…' : 'Save Revenue'}
+            </button>
+            {revStatus === 'saved' && <span className="text-ok text-sm font-medium">✓ Saved</span>}
+            {revStatus === 'error' && <span className="text-danger text-sm font-medium">✗ Error</span>}
+          </div>
+        </div>
+      </form>
+
       {/* Automation guide */}
       <div className="card mb-5 border border-blue-100 bg-blue-50/40">
         <h3 className="text-xs font-semibold text-blue-700 mb-2">📋 What's automated vs. what you enter here</h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-1 text-[11px]">
-          <span className="text-blue-600">✏️ Revenue → here daily (MC invoice total excl. tips) · sums to MTD automatically</span>
+          <span className="text-blue-600">✏️ Revenue → MTD total above (MC invoice total excl. tips)</span>
           <span className="text-blue-600">✏️ New hires / quit / fired → here (daily)</span>
           <span className="text-green-600">🤖 Leads, quotes, closes ← auto via GHL</span>
           <span className="text-blue-600">✏️ Call-ins / absences → here (daily)</span>

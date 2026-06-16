@@ -170,6 +170,17 @@ router.get('/summary', (req, res) => {
     'SELECT entry_date FROM manual_entries ORDER BY entry_date DESC, id DESC LIMIT 1'
   ).get()
 
+  // Latest tech (RGE) count for dynamic daily goal
+  const latestRGERow = db.prepare(`
+    SELECT revenue_generating_employees FROM manual_entries
+    WHERE revenue_generating_employees IS NOT NULL
+    ORDER BY entry_date DESC, id DESC LIMIT 1
+  `).get()
+  const latestRGE = latestRGERow?.revenue_generating_employees ?? null
+  const billingRate = parseFloat(cfg.billing_rate_per_rge) || 58
+  const goalHours   = parseFloat(cfg.goal_hours) || 6.5
+  const dynamicDailyGoal = latestRGE ? latestRGE * goalHours * billingRate : null
+
   const recurringAtStart = recurringClients + cancellations
   const attritionRate = recurringAtStart > 0 ? cancellations / recurringAtStart : 0
 
@@ -199,6 +210,10 @@ router.get('/summary', (req, res) => {
     estimated_current_headcount: estimatedCurrentHeadcount,
     gift_card_sales_mtd: staffChanges.gift_card_sales || 0,
     last_entry_date: lastEntry?.entry_date || null,
+    rge_count: latestRGE,
+    dynamic_daily_goal: dynamicDailyGoal,
+    goal_rate: billingRate,
+    goal_hours: goalHours,
     settings: cfg,
   })
 })

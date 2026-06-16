@@ -157,6 +157,8 @@ const migrations = [
     vendor         TEXT,
     created_at     TEXT DEFAULT (datetime('now'))
   )`,
+  // Update billing rate from $55 → $58 per JTH
+  `UPDATE settings SET value = '58' WHERE key = 'billing_rate_per_rge' AND value = '55'`,
 ]
 for (const sql of migrations) {
   try { db.exec(sql) } catch (_) { /* column already exists — safe to ignore */ }

@@ -94,7 +94,10 @@ export default function Overview() {
   })()
 
   const closeRate = summary.leads_quoted > 0 ? summary.leads_closed / summary.leads_quoted : null
-  const dailyGoal = parseFloat(summary.settings?.daily_goal)
+  const dailyGoal = summary.dynamic_daily_goal || parseFloat(summary.settings?.daily_goal) || null
+  const rgeCount  = summary.rge_count
+  const goalRate  = summary.goal_rate
+  const goalHours = summary.goal_hours
 
   // Chart data — only months with any revenue or up to current month
   const currentMonth = nowMonth()
@@ -189,7 +192,11 @@ export default function Overview() {
           label="MTD Revenue"
           value={fmt$(summary.revenue)}
           borderColor="border-peach"
-          sub={dailyGoal ? `Daily goal: ${fmt$(dailyGoal)}` : 'Set goal in Settings'}
+          sub={dailyGoal
+            ? rgeCount
+              ? `Daily goal: ${fmt$(dailyGoal)} · ${rgeCount} techs × ${goalHours}hrs × $${goalRate}`
+              : `Daily goal: ${fmt$(dailyGoal)}`
+            : 'Log RGE count in Entry to see goal'}
           source="✏️ enter monthly total in Log Data"
         />
         <KpiCard
@@ -218,6 +225,34 @@ export default function Overview() {
           source="🤖 auto via GHL · Zapier"
         />
       </div>
+
+      {/* Daily Revenue Goal */}
+      {dailyGoal && (
+        <div className="flex items-center gap-4 bg-peach/10 border border-peach/30 rounded-xl px-5 py-3 mb-6 flex-wrap">
+          <div className="flex items-center gap-2 flex-1 min-w-0">
+            <span className="text-peach text-lg">🎯</span>
+            <div>
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Daily Revenue Goal</p>
+              <p className="text-2xl font-bold text-ink">{fmt$(dailyGoal)}</p>
+            </div>
+          </div>
+          {rgeCount && (
+            <div className="text-sm text-gray-500 flex items-center gap-1.5 flex-wrap">
+              <span className="font-semibold text-ink">{rgeCount}</span>
+              <span>techs</span>
+              <span className="text-gray-300">×</span>
+              <span className="font-semibold text-ink">{goalHours}</span>
+              <span>JTH</span>
+              <span className="text-gray-300">×</span>
+              <span className="font-semibold text-ink">${goalRate}</span>
+              <span className="text-gray-400 text-xs ml-1">· update tech count in Log Data</span>
+            </div>
+          )}
+          {!rgeCount && (
+            <p className="text-xs text-gray-400">Log current tech count (RGE) in <Link to="/entry" className="text-brand underline">Log Data</Link> to see formula</p>
+          )}
+        </div>
+      )}
 
       {/* Revenue chart */}
       <div className="card mb-6">

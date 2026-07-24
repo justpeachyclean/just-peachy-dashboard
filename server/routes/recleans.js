@@ -1,6 +1,7 @@
 const express = require('express')
 const router = express.Router()
 const db = require('../db')
+const { maybeForward } = require('../lib/forward')
 
 // GET /api/recleans?year=YYYY
 router.get('/', (req, res) => {
@@ -16,7 +17,11 @@ router.get('/', (req, res) => {
   for (const r of recleans) {
     const month = r.reclean_date?.slice(0, 7)
     if (month) monthMap[month] = (monthMap[month] || 0) + 1
-    if (r.tech_name) techMap[r.tech_name] = (techMap[r.tech_name] || 0) + 1
+    if (r.tech_name) {
+      for (const t of r.tech_name.split(',').map(s => s.trim()).filter(Boolean)) {
+        techMap[t] = (techMap[t] || 0) + 1
+      }
+    }
   }
 
   const monthly = Object.entries(monthMap)
@@ -38,6 +43,8 @@ router.post('/', (req, res) => {
     INSERT INTO recleans (reclean_date, original_clean_date, client_name, tech_name, reason, notes)
     VALUES (?, ?, ?, ?, ?, ?)
   `).run(reclean_date, original_clean_date || null, client_name || null, tech_name || null, reason || null, notes || null)
+  // feed the tech's Barometer (Quality) if a tech is attributed; idempotent, non-blocking
+  maybeForward('recleans', r.lastInsertRowid, 'reclean', { tech: tech_name, date: reclean_date, client: client_name, note: reason })
   res.json({ ok: true, id: r.lastInsertRowid })
 })
 
@@ -54,6 +61,9 @@ router.patch('/:id', (req, res) => {
       notes               = COALESCE(?, notes)
     WHERE id = ?
   `).run(reclean_date, original_clean_date, client_name, tech_name, reason, notes, req.params.id)
+  // if a tech was attributed (now or earlier) and it hasn't been sent yet, forward it once
+  const row = db.prepare('SELECT * FROM recleans WHERE id=?').get(req.params.id)
+  if (row) maybeForward('recleans', row.id, 'reclean', { tech: row.tech_name, date: row.reclean_date, client: row.client_name, note: row.reason })
   res.json({ ok: true })
 })
 

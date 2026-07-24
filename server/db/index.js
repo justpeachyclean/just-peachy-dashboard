@@ -182,6 +182,8 @@ const migrations = [
     notes               TEXT,
     created_at          TEXT DEFAULT (datetime('now'))
   )`,
+  // recleans forward to the Employee dashboard barometer (idempotent via forwarded_at)
+  `ALTER TABLE recleans ADD COLUMN forwarded_at TEXT`,
 ]
 for (const sql of migrations) {
   try { db.exec(sql) } catch (_) { /* column already exists — safe to ignore */ }

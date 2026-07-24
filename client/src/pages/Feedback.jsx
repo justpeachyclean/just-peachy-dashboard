@@ -1,5 +1,45 @@
 import { apiFetch } from '../AuthContext'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
+
+function TechTagInput({ value, onChange, placeholder = 'Type a name, press Enter' }) {
+  const tags = value ? value.split(',').map(t => t.trim()).filter(Boolean) : []
+  const [input, setInput] = useState('')
+  const inputRef = useRef(null)
+
+  const commit = () => {
+    const trimmed = input.trim()
+    if (trimmed && !tags.includes(trimmed)) onChange([...tags, trimmed].join(', '))
+    setInput('')
+  }
+
+  const remove = (i) => onChange(tags.filter((_, idx) => idx !== i).join(', '))
+
+  return (
+    <div
+      className="form-input min-h-[38px] flex flex-wrap gap-1.5 p-1.5 cursor-text"
+      onClick={() => inputRef.current?.focus()}
+    >
+      {tags.map((tag, i) => (
+        <span key={i} className="inline-flex items-center gap-1 bg-sage/10 text-sage text-xs font-medium px-2 py-0.5 rounded-full">
+          {tag}
+          <button type="button" onClick={() => remove(i)} className="hover:text-red-400 leading-none ml-0.5">×</button>
+        </span>
+      ))}
+      <input
+        ref={inputRef}
+        value={input}
+        onChange={e => setInput(e.target.value)}
+        onKeyDown={e => {
+          if (e.key === 'Enter' || e.key === ',') { e.preventDefault(); commit() }
+          if (e.key === 'Backspace' && !input && tags.length) onChange(tags.slice(0, -1).join(', '))
+        }}
+        onBlur={commit}
+        placeholder={tags.length === 0 ? placeholder : 'Add another…'}
+        className="flex-1 min-w-[100px] outline-none bg-transparent text-sm py-0.5"
+      />
+    </div>
+  )
+}
 
 const MONTH_LABELS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 
@@ -620,8 +660,8 @@ export default function Feedback() {
                     <input className="form-input" value={recleanForm.client_name} onChange={e => setR('client_name', e.target.value)} placeholder="Who requested the reclean" />
                   </div>
                   <div>
-                    <label className="form-label">Tech Name</label>
-                    <input className="form-input" value={recleanForm.tech_name} onChange={e => setR('tech_name', e.target.value)} placeholder="Which cleaner did the original clean" />
+                    <label className="form-label">Tech(s)</label>
+                    <TechTagInput value={recleanForm.tech_name} onChange={v => setR('tech_name', v)} placeholder="Which cleaner(s) did the original clean" />
                   </div>
                   <div>
                     <label className="form-label">Reclean Date *</label>
@@ -776,8 +816,8 @@ export default function Feedback() {
                                   <input className="form-input py-1 text-sm" value={editRecleanForm.client_name} onChange={e => setEditRecleanForm(p => ({ ...p, client_name: e.target.value }))} />
                                 </div>
                                 <div>
-                                  <label className="form-label text-xs">Tech Name</label>
-                                  <input className="form-input py-1 text-sm" value={editRecleanForm.tech_name} onChange={e => setEditRecleanForm(p => ({ ...p, tech_name: e.target.value }))} />
+                                  <label className="form-label text-xs">Tech(s)</label>
+                                  <TechTagInput value={editRecleanForm.tech_name} onChange={v => setEditRecleanForm(p => ({ ...p, tech_name: v }))} />
                                 </div>
                                 <div>
                                   <label className="form-label text-xs">Reclean Date</label>

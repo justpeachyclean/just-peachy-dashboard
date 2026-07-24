@@ -94,6 +94,26 @@ export default function BonusTracker() {
   useEffect(() => { loadAll() }, [year])
   useEffect(() => { loadQualifying(autoCalcMonth) }, [autoCalcMonth])
 
+  // Auto-populate breakdown from stored records whenever month selector or records change
+  useEffect(() => {
+    const monthRecs = records.filter(r => r.month === autoCalcMonth)
+    if (monthRecs.length > 0) {
+      setAutoCalcResults(monthRecs.map(r => ({
+        rep: r.rep_name,
+        quotes_given: r.quotes_given || 0,
+        closed_sales: r.closed_sales || 0,
+        recurring_closed: r.recurring_closed || 0,
+        weekly_biweekly_closed: r.weekly_biweekly_closed || 0,
+        tier: r.tier,
+        bonus_amount: r.bonus_amount || 0,
+      })))
+      setAutoCalcMsg(`Saved breakdown for ${monthLabel(autoCalcMonth)} — click Auto-Calculate to refresh`)
+    } else {
+      setAutoCalcResults(null)
+      setAutoCalcMsg('')
+    }
+  }, [records, autoCalcMonth])
+
   // Build months array for table header
   const months = Array.from({ length: 12 }, (_, i) => {
     const mm = String(i + 1).padStart(2, '0')
@@ -191,11 +211,11 @@ export default function BonusTracker() {
     }
   }
 
-  const markPaid = async (repId, month) => {
+  const markPaid = async (repId, month, paid) => {
     await apiFetch('/api/bonus/records/pay', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ rep_id: repId, month }),
+      body: JSON.stringify({ rep_id: repId, month, paid }),
     })
     loadAll()
   }
@@ -365,7 +385,7 @@ export default function BonusTracker() {
               </thead>
               <tbody>
                 {calendar.map(c => (
-                  <tr key={`${c.rep_id}-${c.month}`} className="border-b border-gray-50 hover:bg-gray-50/50">
+                  <tr key={`${c.rep_id}-${c.month}`} className={`border-b border-gray-50 hover:bg-gray-50/50 ${c.status === 'paid' ? 'opacity-50' : ''}`}>
                     <td className="py-2.5 pr-3 font-medium text-ink">{c.rep_name}</td>
                     <td className="py-2.5 px-2 text-gray-600">{monthLabel(c.month)}</td>
                     <td className="py-2.5 px-2 text-center"><TierBadge tier={c.tier} /></td>
@@ -382,12 +402,15 @@ export default function BonusTracker() {
                       {c.payout_month === currentMonth && <span className="ml-1 text-xs text-warn">← due now</span>}
                     </td>
                     <td className="py-2.5 pl-3">
-                      <button
-                        onClick={() => markPaid(c.rep_id, c.month)}
-                        className="text-xs text-sage hover:underline whitespace-nowrap"
-                      >
-                        Mark paid
-                      </button>
+                      <label className="flex items-center gap-1.5 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={c.status === 'paid'}
+                          onChange={e => markPaid(c.rep_id, c.month, e.target.checked)}
+                          className="w-4 h-4 accent-ok"
+                        />
+                        <span className="text-xs text-gray-500">{c.status === 'paid' ? 'Paid' : 'Mark paid'}</span>
+                      </label>
                     </td>
                   </tr>
                 ))}

@@ -49,15 +49,41 @@ export default function Overview() {
   const [monthly, setMonthly] = useState([])
   const [error, setError] = useState(null)
   const [showYtd, setShowYtd] = useState(false)
+  const [breakageData, setBreakageData] = useState(null)
+  const [recleanData, setRecleanData] = useState(null)
 
   useEffect(() => {
     setSummary(null)
+    setBreakageData(null)
+    setRecleanData(null)
     const year = selectedMonth.split('-')[0]
     Promise.all([
       apiFetch(`/api/data/summary?month=${selectedMonth}`).then(r => r.json()),
       apiFetch(`/api/data/monthly?year=${year}`).then(r => r.json()),
+      apiFetch(`/api/breakages?year=${year}`).then(r => r.json()).catch(() => null),
+      apiFetch(`/api/recleans?year=${year}`).then(r => r.json()).catch(() => null),
     ])
-      .then(([s, m]) => { setSummary(s); setMonthly(m) })
+      .then(([s, m, b, rc]) => {
+        setSummary(s)
+        setMonthly(m)
+        if (b?.breakages) {
+          const monthBreakages = b.breakages.filter(r => r.report_date?.startsWith(selectedMonth))
+          const ytdBreakages = b.breakages
+          setBreakageData({
+            mtd: monthBreakages.length,
+            mtd_unresolved: monthBreakages.filter(r => !r.resolved).length,
+            mtd_resolved: monthBreakages.filter(r => r.resolved).length,
+            mtd_value: monthBreakages.reduce((s, r) => s + (r.value || 0), 0),
+            ytd: ytdBreakages.length,
+            ytd_unresolved: ytdBreakages.filter(r => !r.resolved).length,
+            ytd_value: ytdBreakages.reduce((s, r) => s + (r.value || 0), 0),
+          })
+        }
+        if (rc?.recleans) {
+          const mtd = rc.recleans.filter(r => r.reclean_date?.startsWith(selectedMonth)).length
+          setRecleanData({ mtd, ytd: rc.stats?.total || 0 })
+        }
+      })
       .catch(setError)
   }, [selectedMonth])
 
@@ -128,6 +154,9 @@ export default function Overview() {
   const ytdRetained = ytdMonths.reduce((s, m) => s + (m.retained || 0), 0)
   const ytdAttritionRate = ytdInitial > 0 ? 1 - ytdRetained / ytdInitial : null
   const ytdSkips = ytdMonths.reduce((s, m) => s + (m.skips || 0), 0)
+
+  // Last 6 months for the MoM table
+  const momMonths = chartData.slice(-6)
 
   return (
     <div>
@@ -317,7 +346,7 @@ export default function Overview() {
       </div>
 
       {/* Secondary KPIs */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 mb-6">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
         <KpiCard label="Cancellations (MTD)" value={summary.cancellations} borderColor="border-gray-200"
           source="🤖 auto via MaidCentral · Zapier" />
         <KpiCard label="Skips (MTD)" value={summary.skips} borderColor="border-gray-200"
@@ -326,6 +355,13 @@ export default function Overview() {
           sub={`${summary.retained} of ${summary.initial_cleans} initials kept`}
           borderColor="border-gray-200"
           source="🔄 auto via client log (GHL) · falls back to manual Entry" />
+        <KpiCard
+          label="Recleans (MTD)"
+          value={recleanData ? recleanData.mtd : '—'}
+          sub={recleanData && recleanData.ytd > 0 ? `${recleanData.ytd} YTD` : undefined}
+          borderColor={recleanData && recleanData.mtd > 2 ? 'border-warn' : 'border-gray-200'}
+          source="✏️ manual · logged via Feedback → Recleans"
+        />
       </div>
 
       {/* YTD Summary — collapsible */}
@@ -485,6 +521,39 @@ export default function Overview() {
         </div>
       )}
 
+      {/* Breakages */}
+      {breakageData && (breakageData.ytd > 0) && (
+        <div className="card mb-5">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-sm font-semibold text-gray-700">Breakages</h2>
+            <Link to="/breakages" className="text-xs text-sage hover:underline">View all →</Link>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-center">
+            <div>
+              <p className="text-2xl font-bold text-ink">{breakageData.mtd}</p>
+              <p className="text-xs text-gray-500 mt-1">This Month</p>
+            </div>
+            <div>
+              <p className={`text-2xl font-bold ${breakageData.mtd_unresolved > 0 ? 'text-danger' : 'text-gray-300'}`}>{breakageData.mtd_unresolved}</p>
+              <p className="text-xs text-gray-500 mt-1">Open</p>
+            </div>
+            <div>
+              <p className="text-2xl font-bold text-ok">{breakageData.mtd_resolved}</p>
+              <p className="text-xs text-gray-500 mt-1">Resolved</p>
+            </div>
+            <div>
+              <p className="text-2xl font-bold text-warn">{breakageData.mtd_value > 0 ? fmt$(breakageData.mtd_value) : '—'}</p>
+              <p className="text-xs text-gray-500 mt-1">Est. Value</p>
+            </div>
+          </div>
+          {breakageData.ytd > breakageData.mtd && (
+            <p className="text-xs text-gray-400 mt-3 text-right">
+              YTD: {breakageData.ytd} total · {breakageData.ytd_unresolved} open · {breakageData.ytd_value > 0 ? fmt$(breakageData.ytd_value) : '$0'} value
+            </p>
+          )}
+        </div>
+      )}
+
       {/* Staff */}
       <div className="card mb-5">
         <div className="flex items-center justify-between mb-4">
@@ -534,6 +603,63 @@ export default function Overview() {
             <Link to="/settings" className="text-brand font-semibold underline">Settings</Link>{' '}
             to enable goal tracking on the chart.
           </span>
+        </div>
+      )}
+
+      {/* Month-over-Month Snapshot */}
+      {momMonths.length > 0 && (
+        <div className="card mt-6">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h2 className="font-semibold text-ink">Month-over-Month Snapshot</h2>
+              <p className="text-xs text-gray-400 mt-0.5">Last 6 months · lead funnel at a glance</p>
+            </div>
+            <Link to="/leads" className="text-xs text-sage hover:underline">Full lead log →</Link>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs min-w-[480px]">
+              <thead>
+                <tr className="border-b border-gray-100">
+                  <th className="text-left py-2 pr-4 font-medium text-gray-400 uppercase tracking-wide w-36">Metric</th>
+                  {momMonths.map(m => {
+                    const [yr, mo] = m.month.split('-')
+                    return (
+                      <th key={m.month} className={`text-right py-2 px-2 font-medium uppercase tracking-wide ${m.month === currentMonth ? 'text-brand' : 'text-gray-400'}`}>
+                        {MONTH_SHORT[parseInt(mo) - 1]} {yr.slice(2)}
+                      </th>
+                    )
+                  })}
+                </tr>
+              </thead>
+              <tbody>
+                {[
+                  { label: 'Leads In',           val: m => m.leads_in || 0,           fmt: v => v > 0 ? v : '—',                       cls: () => 'text-ink' },
+                  { label: 'Quoted',              val: m => m.leads_quoted || 0,       fmt: v => v > 0 ? v : '—',                       cls: () => 'text-ink' },
+                  { label: 'Lead→Quote %',        val: m => m.leads_in > 0 ? m.leads_quoted / m.leads_in : null,
+                                                  fmt: v => v != null ? fmtPct(v) : '—',
+                                                  cls: v => v == null ? 'text-gray-300' : v >= 0.5 ? 'text-ok' : v >= 0.3 ? 'text-warn' : 'text-danger' },
+                  { label: 'Converted',           val: m => m.leads_closed || 0,      fmt: v => v > 0 ? v : '—',                       cls: () => 'text-ink' },
+                  { label: 'Quote→Sale %',        val: m => m.leads_quoted > 0 ? m.leads_closed / m.leads_quoted : null,
+                                                  fmt: v => v != null ? fmtPct(v) : '—',
+                                                  cls: v => v == null ? 'text-gray-300' : v >= 0.4 ? 'text-ok' : v >= 0.25 ? 'text-warn' : 'text-danger' },
+                  { label: 'Recurring Retained',  val: m => m.initial_to_recurring || 0, fmt: v => v > 0 ? v : '—',                    cls: () => 'text-ok' },
+                  { label: 'Cancellations',       val: m => m.cancellations || 0,     fmt: v => v > 0 ? v : '—',                       cls: v => v === 0 ? 'text-gray-300' : v <= 3 ? 'text-warn' : 'text-danger' },
+                ].map(({ label, val, fmt, cls }, i) => (
+                  <tr key={label} className={`border-b border-gray-50 ${i % 2 !== 0 ? 'bg-gray-50/40' : ''}`}>
+                    <td className="py-2 pr-4 text-gray-500 font-medium">{label}</td>
+                    {momMonths.map(m => {
+                      const v = val(m)
+                      return (
+                        <td key={m.month} className={`text-right py-2 px-2 font-semibold ${cls(v)} ${m.month === currentMonth ? 'bg-brand/5' : ''}`}>
+                          {fmt(v)}
+                        </td>
+                      )
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
     </div>

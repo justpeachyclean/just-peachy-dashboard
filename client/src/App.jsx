@@ -14,6 +14,7 @@ import Feedback from './pages/Feedback'
 import Connections from './pages/Connections'
 import Entry from './pages/Entry'
 import Settings from './pages/Settings'
+import Reports from './pages/Reports'
 
 function AppShell() {
   const { isLoggedIn, checked } = useAuth()
@@ -46,6 +47,7 @@ function AppShell() {
           <Route path="/entry" element={<Entry />} />
           <Route path="/connections" element={<Connections />} />
           <Route path="/settings" element={<Settings />} />
+          <Route path="/reports" element={<Reports />} />
         </Routes>
       </main>
     </div>

@@ -8,7 +8,8 @@ const app = express()
 const PORT = process.env.PORT || 3001
 
 app.use(cors({ origin: process.env.CLIENT_ORIGIN || 'http://localhost:3000' }))
-app.use(express.json())
+app.use(express.json({ limit: '5mb' }))
+
 app.use(authMiddleware)
 
 // Routes
@@ -29,6 +30,8 @@ app.use('/api/users',          require('./routes/users'))
 app.use('/api/hiring',         require('./routes/hiring'))
 app.use('/api/staff',          require('./routes/staff'))
 app.use('/api/breakages',      require('./routes/breakages'))
+app.use('/api/recleans',       require('./routes/recleans'))
+app.use('/api/reports',        require('./routes/reports'))
 
 // Health check
 app.get('/api/health', (req, res) => {

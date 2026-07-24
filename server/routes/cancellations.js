@@ -3,6 +3,7 @@ const router = express.Router()
 const db = require('../db')
 const CODES = require('../lib/cancellationCodes')
 const { audit } = require('../lib/auth')
+const { maybeForward } = require('../lib/forward')
 
 function resolveCode(code) {
   if (!code) return { label: null, category: null }
@@ -118,6 +119,8 @@ router.post('/', (req, res) => {
     )
   }
 
+  // every cancellation with an attributed tech counts as a lost client on their Barometer
+  maybeForward('cancelled_clients', result.lastInsertRowid, 'cancellation', { tech: technician, date: cancel_date, client: client_name })
   audit(req, 'cancellation_added', `${client_name || 'Unknown'} — ${cancel_date}`)
   res.json({ ok: true, id: result.lastInsertRowid })
 })
@@ -173,6 +176,12 @@ router.patch('/:id', (req, res) => {
   )
 
   audit(req, 'cancellation_updated', `ID ${req.params.id} — ${Object.keys(req.body).join(', ')}`)
+
+  // once a tech is attributed (via coding), forward the lost client to their Barometer (once)
+  {
+    const row = db.prepare('SELECT technician, last_cleaner, cancel_date, client_name FROM cancelled_clients WHERE id=?').get(req.params.id)
+    if (row) maybeForward('cancelled_clients', req.params.id, 'cancellation', { tech: row.technician || row.last_cleaner, date: row.cancel_date, client: row.client_name })
+  }
 
   // If reason code is now T-coded, add to nurture if not already there
   if (reason_code && reason_code.toUpperCase().startsWith('T')) {

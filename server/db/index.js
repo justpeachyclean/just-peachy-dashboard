@@ -124,6 +124,10 @@ const migrations = [
   `ALTER TABLE cancelled_clients ADD COLUMN last_clean_date TEXT`,
   // MC client ID for deduplication
   `ALTER TABLE cancelled_clients ADD COLUMN mc_client_id TEXT`,
+  // Marks records already forwarded to the Employee dashboard's Barometer (bridge, idempotent)
+  `ALTER TABLE cancelled_clients ADD COLUMN forwarded_at TEXT`,
+  `ALTER TABLE breakages ADD COLUMN forwarded_at TEXT`,
+  `ALTER TABLE client_feedback ADD COLUMN forwarded_at TEXT`,
   // Seed default sales rep if none exist
   `INSERT OR IGNORE INTO sales_reps (name, active, start_date) SELECT 'Lexi Ledom', 1, '2026-01-01' WHERE NOT EXISTS (SELECT 1 FROM sales_reps WHERE LOWER(name) = 'lexi ledom')`,
   // Backfill rep_name: normalize 'Lexi' → 'Lexi Ledom' on all lead records
@@ -144,6 +148,9 @@ const migrations = [
     created_at       TEXT DEFAULT (datetime('now'))
   )`,
   `ALTER TABLE lead_records ADD COLUMN is_flex INTEGER DEFAULT 0`,
+  `ALTER TABLE lead_records ADD COLUMN is_current_client INTEGER DEFAULT 0`,
+  `ALTER TABLE lead_records ADD COLUMN converted_date TEXT`,
+  `ALTER TABLE lead_records ADD COLUMN recurring_converted_date TEXT`,
   `UPDATE settings SET value = '6005 *Marketing' WHERE key = 'qb_marketing_category'`,
   // Individual QB transactions for idempotent marketing spend sync via Zapier
   `CREATE TABLE IF NOT EXISTS qb_transactions (
@@ -159,6 +166,22 @@ const migrations = [
   )`,
   // Update billing rate from $55 → $58 per JTH
   `UPDATE settings SET value = '58' WHERE key = 'billing_rate_per_rge' AND value = '55'`,
+  // Flag for recurring clients who cancelled after their initial clean — disqualifies from recurring bonus
+  `ALTER TABLE lead_records ADD COLUMN cancelled_after_initial INTEGER DEFAULT 0`,
+  // External ID for deduplicating scorecard/MC imports — never clobbers manual entries
+  `ALTER TABLE client_feedback ADD COLUMN external_id TEXT`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS idx_feedback_external ON client_feedback(external_id) WHERE external_id IS NOT NULL`,
+  // Reclean tracking — operational events separate from satisfaction feedback
+  `CREATE TABLE IF NOT EXISTS recleans (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    reclean_date        TEXT NOT NULL,
+    original_clean_date TEXT,
+    client_name         TEXT,
+    tech_name           TEXT,
+    reason              TEXT,
+    notes               TEXT,
+    created_at          TEXT DEFAULT (datetime('now'))
+  )`,
 ]
 for (const sql of migrations) {
   try { db.exec(sql) } catch (_) { /* column already exists — safe to ignore */ }
@@ -211,6 +234,27 @@ try {
   })()
   if (missing.length > 0) console.log(`✅ Backfilled welcome_call/otc_24hr_call for ${missing.length} clients`)
 } catch(e) { console.warn('Care backfill skipped:', e.message) }
+
+// One-time cleanup: remove care journey records for cancelled clients
+try {
+  const alreadyDone = db.prepare("SELECT value FROM settings WHERE key='care_cancel_cleanup_v1'").get()
+  if (!alreadyDone) {
+    const result = db.prepare(`
+      DELETE FROM client_care
+      WHERE EXISTS (
+        SELECT 1 FROM cancelled_clients cx
+        WHERE LOWER(TRIM(cx.client_name)) = LOWER(TRIM(client_care.client_name))
+          AND (cx.save_outcome IS NULL OR cx.save_outcome != 'Saved')
+      ) OR EXISTS (
+        SELECT 1 FROM lead_records lr
+        WHERE LOWER(TRIM(lr.client_name)) = LOWER(TRIM(client_care.client_name))
+          AND lr.cancelled_after_initial = 1
+      )
+    `).run()
+    db.prepare("INSERT INTO settings (key, value) VALUES ('care_cancel_cleanup_v1', '1')").run()
+    if (result.changes > 0) console.log(`🧹 Removed ${result.changes} care records for cancelled clients`)
+  }
+} catch(e) { console.warn('Care cleanup skipped:', e.message) }
 
 // Seed first admin user if none exist
 const { randomBytes, scryptSync } = require('crypto')

@@ -26,7 +26,7 @@ export default function Breakages() {
   const [saveMsg, setSaveMsg] = useState('')
 
   const load = () =>
-    apiFetch(`/api/breakages?year=${year}&resolved=${filter === 'all' ? 'all' : filter === 'unresolved' ? '0' : '1'}`)
+    apiFetch(`/api/breakages?year=${year}&resolved=all`)
       .then(r => r.json())
       .then(setData)
       .catch(() => {})
@@ -98,7 +98,32 @@ export default function Breakages() {
     load()
   }
 
-  const { breakages, stats } = data
+  const { breakages: allBreakages, stats } = data
+
+  // Trends — computed from ALL records for the year (not filtered by tab)
+  const allYear = allBreakages
+  const byMonth = {}
+  const byTech  = {}
+  allYear.forEach(r => {
+    const m = r.report_date?.slice(0, 7)
+    if (m) {
+      if (!byMonth[m]) byMonth[m] = { total: 0, resolved: 0, value: 0 }
+      byMonth[m].total++
+      if (r.resolved) byMonth[m].resolved++
+      byMonth[m].value += r.value || 0
+    }
+    const t = r.tech_name?.trim() || 'Unknown'
+    if (!byTech[t]) byTech[t] = { total: 0, value: 0 }
+    byTech[t].total++
+    byTech[t].value += r.value || 0
+  })
+  const monthRows = Object.entries(byMonth).sort(([a],[b]) => a.localeCompare(b))
+  const techRows  = Object.entries(byTech).sort(([,a],[,b]) => b.total - a.total).slice(0, 8)
+  const maxMonthTotal = Math.max(1, ...monthRows.map(([,v]) => v.total))
+  const maxTechTotal  = Math.max(1, ...techRows.map(([,v]) => v.total))
+
+  const breakages = filter === 'all' ? allBreakages
+    : allBreakages.filter(r => filter === 'unresolved' ? !r.resolved : !!r.resolved)
   const currentYear = new Date().getFullYear()
 
   return (
@@ -145,6 +170,61 @@ export default function Breakages() {
           </p>
         </div>
       </div>
+
+      {/* Trends */}
+      {monthRows.length > 0 && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-6">
+          {/* Monthly breakdown */}
+          <div className="card">
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-4">Monthly Breakdown</p>
+            <div className="space-y-2">
+              {monthRows.map(([month, d]) => {
+                const label = new Date(month + '-15').toLocaleDateString('en-US', { month: 'short', timeZone: 'UTC' })
+                const barW = Math.round((d.total / maxMonthTotal) * 100)
+                const resolvedW = d.total > 0 ? Math.round((d.resolved / d.total) * 100) : 0
+                return (
+                  <div key={month} className="flex items-center gap-3">
+                    <span className="text-xs text-gray-500 w-8 shrink-0">{label}</span>
+                    <div className="flex-1 bg-gray-100 rounded-full h-3 overflow-hidden">
+                      <div className="h-3 rounded-full bg-red-200 relative" style={{ width: `${barW}%` }}>
+                        <div className="absolute inset-y-0 left-0 bg-green-400 rounded-full" style={{ width: `${resolvedW}%` }} />
+                      </div>
+                    </div>
+                    <span className="text-xs font-semibold text-ink w-4 text-right">{d.total}</span>
+                    <span className="text-xs text-gray-400 w-16 text-right">{d.value > 0 ? fmt$(d.value) : ''}</span>
+                  </div>
+                )
+              })}
+            </div>
+            <div className="flex items-center gap-4 mt-3 pt-3 border-t border-gray-100">
+              <span className="flex items-center gap-1.5 text-xs text-gray-400"><span className="inline-block w-3 h-3 rounded-full bg-green-400"></span>Resolved</span>
+              <span className="flex items-center gap-1.5 text-xs text-gray-400"><span className="inline-block w-3 h-3 rounded-full bg-red-200"></span>Open</span>
+            </div>
+          </div>
+
+          {/* By technician */}
+          <div className="card">
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-4">By Technician</p>
+            {techRows.length === 0
+              ? <p className="text-sm text-gray-400 text-center py-6">No technician data</p>
+              : (
+                <div className="space-y-2">
+                  {techRows.map(([tech, d]) => (
+                    <div key={tech} className="flex items-center gap-3">
+                      <span className="text-xs text-gray-600 w-28 shrink-0 truncate" title={tech}>{tech}</span>
+                      <div className="flex-1 bg-gray-100 rounded-full h-3">
+                        <div className="h-3 rounded-full bg-warn" style={{ width: `${Math.round((d.total / maxTechTotal) * 100)}%` }} />
+                      </div>
+                      <span className="text-xs font-semibold text-ink w-4 text-right">{d.total}</span>
+                      <span className="text-xs text-gray-400 w-16 text-right">{d.value > 0 ? fmt$(d.value) : ''}</span>
+                    </div>
+                  ))}
+                </div>
+              )
+            }
+          </div>
+        </div>
+      )}
 
       {/* Filter tabs */}
       <div className="flex items-center justify-between mb-4">

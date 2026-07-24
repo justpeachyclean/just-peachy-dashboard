@@ -157,6 +157,10 @@ const BLANK_FORM = {
   initial_clean_booked: false,
   recurring_retained: false,
   is_flex: false,
+  is_current_client: false,
+  converted_date: '',
+  recurring_converted_date: '',
+  cancelled_after_initial: false,
   lead_source: '',
   used_before: '',
   reason: '',
@@ -477,11 +481,17 @@ function ImportModal({ onClose, onImported }) {
 export default function Leads() {
   const [leads, setLeads] = useState([])
   const [reps, setReps] = useState([])
+  const _now = new Date()
+  const _todayStr = _now.toISOString().split('T')[0]
+  const _firstOfMonth = `${_now.getFullYear()}-${String(_now.getMonth() + 1).padStart(2, '0')}-01`
   const [filter, setFilter] = useState({
-    year: String(new Date().getFullYear()),
-    month: String(new Date().getMonth() + 1).padStart(2, '0'),
-    converted: 'all',  // default: show all leads (funnel view)
+    year: String(_now.getFullYear()),
+    month: String(_now.getMonth() + 1).padStart(2, '0'),
+    converted: 'all',
   })
+  const [rangeMode, setRangeMode] = useState('month')
+  const [dateStart, setDateStart] = useState(_firstOfMonth)
+  const [dateEnd, setDateEnd] = useState(_todayStr)
   const [searchInput, setSearchInput] = useState('')
   const [search, setSearch] = useState('')
   const [showForm, setShowForm] = useState(false)
@@ -490,6 +500,21 @@ export default function Leads() {
   const [form, setForm] = useState(BLANK_FORM)
   const [saving, setSaving] = useState(false)
   const [careMsg, setCareMsg] = useState(null)
+  const [dupMatches, setDupMatches] = useState([])
+
+  // Check for duplicate client name when adding (not editing)
+  useEffect(() => {
+    if (editId) { setDupMatches([]); return }
+    const name = (form.client_name || '').trim()
+    if (name.length < 2) { setDupMatches([]); return }
+    const t = setTimeout(() => {
+      apiFetch(`/api/leads/check?name=${encodeURIComponent(name)}`)
+        .then(r => r.json())
+        .then(rows => setDupMatches(Array.isArray(rows) ? rows : []))
+        .catch(() => {})
+    }, 400)
+    return () => clearTimeout(t)
+  }, [form.client_name, editId])
 
   // Debounce search input → search state (300ms)
   useEffect(() => {
@@ -499,9 +524,11 @@ export default function Leads() {
 
   const load = () => {
     const params = new URLSearchParams({ limit: 2000 })
-    // When searching, drop the month filter so we search all records
     if (search.trim()) {
-      // no month/year filter — load everything
+      // no date filter — search all records
+    } else if (rangeMode === 'range' && dateStart && dateEnd) {
+      params.set('startDate', dateStart)
+      params.set('endDate', dateEnd)
     } else if (filter.month) {
       params.set('month', `${filter.year}-${filter.month}`)
     } else {
@@ -512,7 +539,7 @@ export default function Leads() {
       .then(setLeads)
   }
 
-  useEffect(() => { load() }, [filter.year, filter.month, search])
+  useEffect(() => { load() }, [filter.year, filter.month, search, rangeMode, dateStart, dateEnd])
 
   useEffect(() => {
     apiFetch('/api/bonus/reps').then(r => r.json()).then(rows => {
@@ -547,7 +574,11 @@ export default function Leads() {
       initial_clean_booked: !!r.initial_clean_booked,
       recurring_retained:   !!r.recurring_retained,
       is_flex:              !!r.is_flex,
-      lead_source:          r.lead_source || '',
+      is_current_client:    !!r.is_current_client,
+      converted_date:           r.converted_date || '',
+      recurring_converted_date: r.recurring_converted_date || '',
+      cancelled_after_initial:  !!r.cancelled_after_initial,
+      lead_source:              r.lead_source || '',
       used_before:          r.used_before || '',
       reason:               r.reason || '',
       notes:                r.notes || '',
@@ -567,8 +598,12 @@ export default function Leads() {
       initial_clean_price:  initPrice,
       converted:            form.converted            ? 1 : 0,
       initial_clean_booked: form.initial_clean_booked ? 1 : 0,
-      recurring_retained:   form.recurring_retained   ? 1 : 0,
-      is_flex:              form.is_flex              ? 1 : 0,
+      recurring_retained:      form.recurring_retained      ? 1 : 0,
+      is_flex:                 form.is_flex                 ? 1 : 0,
+      is_current_client:       form.is_current_client       ? 1 : 0,
+      cancelled_after_initial: form.cancelled_after_initial ? 1 : 0,
+      converted_date:           form.converted          ? (form.converted_date || null)           : null,
+      recurring_converted_date: form.recurring_retained ? (form.recurring_converted_date || null) : null,
       source: 'manual',
     }
     if (editId) {
@@ -603,21 +638,22 @@ export default function Leads() {
   })
 
   const converted      = leads.filter(r => r.converted)
-  const recurring      = converted.filter(r => r.recurring_retained)
+  const recurring      = converted.filter(r => r.recurring_retained && !r.cancelled_after_initial)
+  // A lead is "quoted" only if a price was actually entered in the system
   const quoted         = leads.filter(r => r.price_per_clean != null || r.quote_amount != null || r.initial_clean_price != null)
   const initialBooked  = leads.filter(r => r.initial_clean_booked)
 
   const totalAnnual    = recurring.reduce((s, r) => s + (r.annual_value || 0), 0)
 
-  // Funnel rates — Initial→Recurring uses converted as denominator
-  // (checking Recurring Retained auto-checks Initial Clean Booked, so they're equivalent)
-  const leadToQuoteRate        = leads.length > 0     ? quoted.length / leads.length       : null
-  const quoteToSaleRate        = quoted.length > 0    ? converted.length / quoted.length   : null
+  const leadToQuoteRate        = leads.length > 0        ? quoted.length / leads.length        : null
+  const quoteToSaleRate        = quoted.length > 0       ? converted.length / quoted.length    : null
   const initialToRecurringRate = converted.length > 0 ? recurring.length / converted.length : null
 
-  const monthLabel = filter.month
-    ? `${MONTH_NAMES[parseInt(filter.month) - 1]} ${filter.year}`
-    : filter.year
+  const monthLabel = rangeMode === 'range'
+    ? (dateStart && dateEnd ? `${dateStart} – ${dateEnd}` : 'custom range')
+    : filter.month
+      ? `${MONTH_NAMES[parseInt(filter.month) - 1]} ${filter.year}`
+      : filter.year
 
   // Agency export: converted recurring only
   const agencyRows = leads.filter(r => r.converted && r.recurring_retained)
@@ -706,13 +742,36 @@ export default function Leads() {
 
       {/* Filters */}
       <div className="flex items-center gap-3 mb-4 flex-wrap">
-        <select className="form-input w-24 text-sm" value={filter.year} onChange={e => setFilter(f => ({ ...f, year: e.target.value }))}>
-          {['2026','2025','2024'].map(y => <option key={y}>{y}</option>)}
-        </select>
-        <select className="form-input w-36 text-sm" value={filter.month} onChange={e => setFilter(f => ({ ...f, month: e.target.value }))}>
-          <option value="">All months</option>
-          {MONTH_NAMES.map((m, i) => <option key={i} value={String(i+1).padStart(2,'0')}>{m}</option>)}
-        </select>
+        {/* Month / Date Range toggle */}
+        <div className="flex rounded-lg border border-gray-200 overflow-hidden text-sm">
+          <button
+            onClick={() => setRangeMode('month')}
+            className={`px-3 py-1.5 font-medium transition-colors ${rangeMode === 'month' ? 'bg-brand text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+          >Month</button>
+          <button
+            onClick={() => setRangeMode('range')}
+            className={`px-3 py-1.5 font-medium transition-colors border-l border-gray-200 ${rangeMode === 'range' ? 'bg-brand text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+          >Date Range</button>
+        </div>
+
+        {rangeMode === 'month' ? (
+          <>
+            <select className="form-input w-24 text-sm" value={filter.year} onChange={e => setFilter(f => ({ ...f, year: e.target.value }))}>
+              {['2026','2025','2024'].map(y => <option key={y}>{y}</option>)}
+            </select>
+            <select className="form-input w-36 text-sm" value={filter.month} onChange={e => setFilter(f => ({ ...f, month: e.target.value }))}>
+              <option value="">All months</option>
+              {MONTH_NAMES.map((m, i) => <option key={i} value={String(i+1).padStart(2,'0')}>{m}</option>)}
+            </select>
+          </>
+        ) : (
+          <>
+            <input type="date" className="form-input text-sm w-44" value={dateStart} onChange={e => setDateStart(e.target.value)} />
+            <span className="text-sm text-gray-400">to</span>
+            <input type="date" className="form-input text-sm w-44" value={dateEnd} onChange={e => setDateEnd(e.target.value)} />
+          </>
+        )}
+
         <select className="form-input w-44 text-sm" value={filter.converted} onChange={e => setFilter(f => ({ ...f, converted: e.target.value }))}>
           <option value="yes">✓ Clients (converted)</option>
           <option value="all">All leads (funnel view)</option>
@@ -764,7 +823,12 @@ export default function Leads() {
               <tr key={r.id} className={`border-b border-gray-50 hover:bg-gray-50/40 cursor-pointer ${r.converted ? '' : 'opacity-60'}`} onClick={() => openEdit(r)}>
                 <td className="py-2 pr-2 text-gray-500 whitespace-nowrap text-xs">{r.record_date}</td>
                 <td className="py-2 px-2 text-gray-500 text-xs">{r.rep_name || '—'}</td>
-                <td className="py-2 px-2 font-medium text-ink">{r.client_name || <span className="text-gray-300">—</span>}</td>
+                <td className="py-2 px-2 font-medium text-ink">
+                  <span className="flex items-center gap-1.5">
+                    {r.client_name || <span className="text-gray-300">—</span>}
+                    {r.is_current_client ? <span className="text-xs font-semibold text-sky-600 bg-sky-50 px-1.5 py-0.5 rounded-full">CC</span> : null}
+                  </span>
+                </td>
                 <td className="py-2 px-2 text-center"><FreqBadge freq={r.frequency} /></td>
                 <td className="py-2 px-2 text-right text-gray-600 text-xs">{r.quote_amount != null ? fmt$(r.quote_amount) : '—'}</td>
                 <td className="py-2 px-2 text-right font-semibold text-xs">
@@ -782,9 +846,11 @@ export default function Leads() {
                 </td>
                 <td className="py-2 px-2 text-center">
                   {r.recurring_retained
-                    ? r.is_flex
-                      ? <span className="text-xs font-semibold text-purple-500 bg-purple-50 px-1.5 py-0.5 rounded-full">Flex</span>
-                      : <span className="text-xs font-bold text-brand">Y</span>
+                    ? r.cancelled_after_initial
+                      ? <span className="text-xs font-semibold text-rose-400 bg-rose-50 px-1.5 py-0.5 rounded-full line-through" title="Cancelled after initial — excluded from bonus">Y</span>
+                      : r.is_flex
+                        ? <span className="text-xs font-semibold text-purple-500 bg-purple-50 px-1.5 py-0.5 rounded-full">Flex</span>
+                        : <span className="text-xs font-bold text-brand">Y</span>
                     : <span className="text-xs text-gray-300">N</span>}
                 </td>
                 <td className="py-2 px-2 text-gray-400 text-xs">{r.lead_source || '—'}</td>
@@ -833,6 +899,26 @@ export default function Leads() {
               <div>
                 <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Client Name</label>
                 <input type="text" className="form-input" value={f(form.client_name)} onChange={set('client_name')} />
+                {!editId && dupMatches.length > 0 && (
+                  <div className="mt-1.5 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm">
+                    <p className="font-medium text-amber-800">This client already has a record.</p>
+                    {dupMatches.slice(0, 3).map(d => (
+                      <div key={d.id} className="flex items-center justify-between mt-1">
+                        <span className="text-amber-700 text-xs">
+                          {d.rep_name} · {d.record_date} · {d.converted ? 'Converted' : 'Lead'}
+                        </span>
+                        <button
+                          type="button"
+                          className="text-xs text-amber-900 underline font-medium ml-2"
+                          onClick={() => { openEdit(d); setDupMatches([]) }}
+                        >
+                          Edit existing
+                        </button>
+                      </div>
+                    ))}
+                    <p className="text-amber-600 text-xs mt-1">Update the existing record instead of creating a duplicate.</p>
+                  </div>
+                )}
               </div>
               {/* Frequency */}
               <div>
@@ -914,6 +1000,14 @@ export default function Leads() {
                   </select>
                 </div>
               </div>
+              {/* Current Client flag */}
+              <div className="pt-1">
+                <label className="flex items-center gap-2 cursor-pointer" title="Lead is an existing current client — excluded from sales bonus">
+                  <input type="checkbox" checked={!!form.is_current_client} onChange={set('is_current_client')} className="w-4 h-4 accent-sky-500" />
+                  <span className="text-sm text-gray-700">Current Client</span>
+                  <span className="text-xs text-gray-400">(excludes from bonus)</span>
+                </label>
+              </div>
               {/* Conversion checkboxes */}
               <div className="flex flex-wrap gap-x-6 gap-y-2 pt-1">
                 <label className="flex items-center gap-2 cursor-pointer">
@@ -932,6 +1026,26 @@ export default function Leads() {
                     <span className="text-sm text-gray-700">Recurring Retained</span>
                   </label>
                 )}
+                {/* Inline frequency + price when recurring is checked */}
+                {form.converted && form.recurring_retained && (
+                  <div className="mt-2 p-3 bg-brand/5 border border-brand/20 rounded-lg space-y-2">
+                    <p className="text-xs font-semibold text-brand uppercase tracking-wide">Recurring Details</p>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-xs text-gray-500 mb-1">Frequency</label>
+                        <select className="form-input py-1.5 text-sm" value={f(form.frequency)} onChange={set('frequency')}>
+                          <option value="">— select —</option>
+                          {FREQUENCIES.map(fq => <option key={fq} value={fq}>{FREQ_LABELS[fq] || fq}</option>)}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-xs text-gray-500 mb-1">Price per Clean ($)</label>
+                        <input type="number" min="0" step="0.01" className="form-input py-1.5 text-sm" placeholder="e.g. 185"
+                          value={f(form.price_per_clean)} onChange={set('price_per_clean')} />
+                      </div>
+                    </div>
+                  </div>
+                )}
                 {form.converted && form.recurring_retained && (
                   <label className="flex items-center gap-2 cursor-pointer" title="Flex clients book on-demand (not a fixed schedule). Excluded from bonus calculation.">
                     <input type="checkbox" checked={!!form.is_flex} onChange={set('is_flex')} className="w-4 h-4 accent-purple-500" />
@@ -939,7 +1053,30 @@ export default function Leads() {
                     <span className="text-xs text-gray-400">(excludes from bonus)</span>
                   </label>
                 )}
+                {form.converted && form.recurring_retained && (
+                  <label className="flex items-center gap-2 cursor-pointer" title="Client cancelled after their initial clean and never became a true recurring client.">
+                    <input type="checkbox" checked={!!form.cancelled_after_initial} onChange={set('cancelled_after_initial')} className="w-4 h-4 accent-rose-500" />
+                    <span className="text-sm text-gray-700">Cancelled after initial</span>
+                    <span className="text-xs text-gray-400">(disqualifies from recurring bonus)</span>
+                  </label>
+                )}
               </div>
+              {/* Date Initial Converted — shown when converted */}
+              {form.converted && (
+                <div>
+                  <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Date Initial Converted</label>
+                  <input type="date" className="form-input" value={f(form.converted_date)} onChange={set('converted_date')} />
+                  <p className="text-xs text-gray-400 mt-0.5">When the initial clean was booked</p>
+                </div>
+              )}
+              {/* Date Recurring Set Up — only shown when recurring is checked */}
+              {form.recurring_retained && (
+                <div>
+                  <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Date Recurring Set Up</label>
+                  <input type="date" className="form-input" value={f(form.recurring_converted_date)} onChange={set('recurring_converted_date')} />
+                  <p className="text-xs text-gray-400 mt-0.5">When recurring service was scheduled — if different from initial, counts toward that month's bonus</p>
+                </div>
+              )}
               {form.converted && form.initial_clean_booked && !form.recurring_retained && (
                 <p className="text-xs text-amber-600 bg-amber-50 px-3 py-1.5 rounded-lg">
                   Initial clean booked — check "Recurring Retained" once they schedule ongoing service.

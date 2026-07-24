@@ -11,7 +11,14 @@ router.get('/', (req, res) => {
   if (status === 'completed') where = 'WHERE completed = 1'
 
   const rows = db.prepare(
-    `SELECT * FROM client_care ${where} ORDER BY completed ASC, scheduled_date ASC, created_at DESC`
+    `SELECT cc.*,
+       CASE WHEN EXISTS (
+         SELECT 1 FROM cancelled_clients cx
+         WHERE LOWER(TRIM(cx.client_name)) = LOWER(TRIM(cc.client_name))
+           AND (cx.save_outcome IS NULL OR cx.save_outcome != 'Saved')
+       ) THEN 1 ELSE 0 END AS client_cancelled
+     FROM client_care cc ${where}
+     ORDER BY completed ASC, scheduled_date ASC, created_at DESC`
   ).all()
 
   // KPI counts

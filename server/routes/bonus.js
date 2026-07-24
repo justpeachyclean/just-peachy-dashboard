@@ -1,6 +1,7 @@
 const express = require('express')
 const router = express.Router()
 const db = require('../db')
+const { calcBonusForMonths } = require('../lib/calcBonus')
 
 // ── Sales Reps ─────────────────────────────────────────────────────────────
 
@@ -136,14 +137,17 @@ router.post('/records', (req, res) => {
   res.json({ ok: true, tier, bonus_amount, quarterly_bonus, payout_month, close_rate, recurring_ratio })
 })
 
-// PATCH /api/bonus/records/pay  — mark a record as paid
+// PATCH /api/bonus/records/pay  — toggle paid/unpaid
 router.patch('/records/pay', (req, res) => {
-  const { rep_id, month, paid_date } = req.body
+  const { rep_id, month, paid } = req.body
   if (!rep_id || !month) return res.status(400).json({ error: 'rep_id and month required' })
-  db.prepare(`
-    UPDATE bonus_records SET status='paid', paid_date=?, updated_at=datetime('now')
-    WHERE rep_id=? AND month=?
-  `).run(paid_date || new Date().toISOString().slice(0, 10), rep_id, month)
+  if (paid === false) {
+    db.prepare(`UPDATE bonus_records SET status='pending', paid_date=NULL, updated_at=datetime('now') WHERE rep_id=? AND month=?`)
+      .run(rep_id, month)
+  } else {
+    db.prepare(`UPDATE bonus_records SET status='paid', paid_date=?, updated_at=datetime('now') WHERE rep_id=? AND month=?`)
+      .run(new Date().toISOString().slice(0, 10), rep_id, month)
+  }
   res.json({ ok: true })
 })
 
@@ -157,11 +161,17 @@ router.get('/qualifying-sales', (req, res) => {
   const monthEnd   = `${year}-${mon}-31`
 
   const leads = db.prepare(`
-    SELECT id, client_name, frequency, rep_name, record_date, initial_clean_price, price_per_clean, is_flex
+    SELECT id, client_name, frequency, rep_name, record_date, initial_clean_price, price_per_clean,
+           is_flex, is_current_client, month, converted_date, recurring_converted_date, cancelled_after_initial
     FROM lead_records
-    WHERE month = ? AND recurring_retained = 1
+    WHERE recurring_retained = 1
+      AND (
+        month = ?
+        OR (recurring_converted_date IS NOT NULL AND SUBSTR(recurring_converted_date, 1, 7) = ?)
+        OR (recurring_converted_date IS NULL AND converted_date IS NOT NULL AND SUBSTR(converted_date, 1, 7) = ?)
+      )
     ORDER BY rep_name COLLATE NOCASE, record_date
-  `).all(month)
+  `).all(month, month, month)
 
   // Clients who cancelled in the same month (and weren't saved)
   const cancelled = db.prepare(`
@@ -179,7 +189,7 @@ router.get('/qualifying-sales', (req, res) => {
   const enriched = leads.map(l => {
     const key = (l.client_name || '').toLowerCase().trim()
     const cancelDate = cancelMap[key] ?? null
-    return { ...l, disqualified: !!cancelDate || !!l.is_flex, cancel_date: cancelDate }
+    return { ...l, disqualified: !!cancelDate || !!l.is_flex || !!l.is_current_client || !!l.cancelled_after_initial, cancel_date: cancelDate }
   })
 
   res.json(enriched)
@@ -190,99 +200,32 @@ router.post('/auto-calculate', (req, res) => {
   const { month } = req.body
   if (!month) return res.status(400).json({ error: 'month required' })
 
-  const [year, mon] = month.split('-')
-  const monthStart = `${year}-${mon}-01`
-  const monthEnd   = `${year}-${mon}-31`
+  calcBonusForMonths(month)
 
-  // Names of recurring clients who cancelled (and weren't saved) within the same month
-  const cancelledThisMonth = db.prepare(`
-    SELECT LOWER(TRIM(client_name)) AS name FROM cancelled_clients
-    WHERE cancel_date BETWEEN ? AND ?
-      AND (save_outcome IS NULL OR save_outcome != 'Saved')
-  `).all(monthStart, monthEnd).map(r => r.name)
-  const cancelledSet = new Set(cancelledThisMonth)
-
-  const reps = db.prepare('SELECT * FROM sales_reps WHERE active=1').all()
-  const results = []
-
-  for (const rep of reps) {
-    // Get all leads for this rep/month, then filter out same-month cancellations
-    const leads = db.prepare(`
-      SELECT client_name, converted, recurring_retained, frequency,
-             price_per_clean, quote_amount, is_flex
-      FROM lead_records WHERE month = ? AND rep_name = ? COLLATE NOCASE
-    `).all(month, rep.name)
-
-    // One-time service types — do NOT count toward recurring_closed
-    const ONE_TIME_FREQS = new Set([
-      'one_time','one-time','one time','ttb','general','priority',
-      'move out','move in','move out clean','move in clean',
-      'vacation clean','post construction','pcc','vc',
-    ])
-
-    let quotes_given = 0, closed_sales = 0, recurring_closed = 0, weekly_biweekly_closed = 0
-    for (const l of leads) {
-      if (l.is_flex) continue  // flex clients excluded from bonus entirely
-      if (l.price_per_clean != null || l.quote_amount != null) quotes_given++
-      if (!l.converted) continue
-      const nameKey = (l.client_name || '').toLowerCase().trim()
-      const freqKey = (l.frequency || '').toLowerCase().trim()
-      // Use recurring_retained flag as ground truth — more reliable than frequency
-      // (imported leads may have frequency="general" even when they ARE recurring)
-      const isRecurring = !!l.recurring_retained
-      // If recurring client cancelled same month → disqualified from bonus entirely
-      if (isRecurring && cancelledSet.has(nameKey)) continue
-      closed_sales++
-      if (isRecurring) {
-        recurring_closed++
-        if (['weekly','biweekly','bi-weekly'].includes(freqKey)) weekly_biweekly_closed++
-      }
-    }
-
-    const counts = { quotes_given, closed_sales, recurring_closed, weekly_biweekly_closed }
-
-    if (counts.closed_sales > 0 || counts.quotes_given > 0) {
-      const closeRate = counts.quotes_given > 0 ? counts.closed_sales / counts.quotes_given : 0
-      const recurringRatio = counts.recurring_closed > 0 ? counts.weekly_biweekly_closed / counts.recurring_closed : 0
-
-      // Tier thresholds — must match BonusTracker.jsx TIERS display
-      // Tier 3: close ≥ 40% + W/BW ratio ≥ 75% → $700
-      // Tier 2: close ≥ 40% + W/BW ratio ≥ 50% → $400
-      // Tier 1: close ≥ 40% only             → $200
-      let tier = 0, bonus_amount = 0
-      if (closeRate >= 0.40) {
-        if (recurringRatio >= 0.75) { tier = 3; bonus_amount = 700 }
-        else if (recurringRatio >= 0.50) { tier = 2; bonus_amount = 400 }
-        else { tier = 1; bonus_amount = 200 }
-      }
-
-      db.prepare(`
-        INSERT INTO bonus_records (rep_id, month, quotes_given, closed_sales, recurring_closed, weekly_biweekly_closed, close_rate, recurring_ratio, tier, bonus_amount, updated_at)
-        VALUES (?,?,?,?,?,?,?,?,?,?,datetime('now'))
-        ON CONFLICT(rep_id, month) DO UPDATE SET
-          quotes_given=excluded.quotes_given,
-          closed_sales=excluded.closed_sales,
-          recurring_closed=excluded.recurring_closed,
-          weekly_biweekly_closed=excluded.weekly_biweekly_closed,
-          close_rate=excluded.close_rate,
-          recurring_ratio=excluded.recurring_ratio,
-          tier=excluded.tier,
-          bonus_amount=excluded.bonus_amount,
-          updated_at=datetime('now')
-        WHERE status != 'paid'
-      `).run(rep.id, month, counts.quotes_given, counts.closed_sales, counts.recurring_closed, counts.weekly_biweekly_closed, closeRate, recurringRatio, tier, bonus_amount)
-
-      results.push({ rep: rep.name, ...counts, tier, bonus_amount })
-    }
-  }
+  const results = db.prepare(`
+    SELECT br.*, sr.name as rep
+    FROM bonus_records br
+    JOIN sales_reps sr ON br.rep_id = sr.id
+    WHERE br.month = ? AND sr.active = 1
+    ORDER BY sr.name
+  `).all(month).map(r => ({
+    rep: r.rep,
+    quotes_given: r.quotes_given,
+    closed_sales: r.closed_sales,
+    recurring_closed: r.recurring_closed,
+    weekly_biweekly_closed: r.weekly_biweekly_closed,
+    tier: r.tier,
+    bonus_amount: r.bonus_amount,
+  }))
 
   res.json({ ok: true, month, calculated: results.length, results })
 })
 
-// GET /api/bonus/payout-calendar  — pending payouts in next 6 months
+// GET /api/bonus/payout-calendar  — payouts in window (paid + unpaid)
 router.get('/payout-calendar', (req, res) => {
   const now = new Date()
-  const start = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+  const pastDate = new Date(now.getFullYear(), now.getMonth() - 2, 1)
+  const past = `${pastDate.getFullYear()}-${String(pastDate.getMonth() + 1).padStart(2, '0')}`
   const endDate = new Date(now.getFullYear(), now.getMonth() + 6, 1)
   const end = `${endDate.getFullYear()}-${String(endDate.getMonth() + 1).padStart(2, '0')}`
 
@@ -291,11 +234,10 @@ router.get('/payout-calendar', (req, res) => {
     FROM bonus_records br
     JOIN sales_reps sr ON br.rep_id = sr.id
     WHERE br.payout_month BETWEEN ? AND ?
-      AND br.status != 'paid'
       AND sr.active = 1
       AND (br.bonus_amount + br.quarterly_bonus) > 0
     ORDER BY br.payout_month, sr.name
-  `).all(start, end)
+  `).all(past, end)
 
   res.json(rows)
 })

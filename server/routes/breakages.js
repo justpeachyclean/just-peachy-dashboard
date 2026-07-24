@@ -1,6 +1,7 @@
 const express = require('express')
 const router = express.Router()
 const db = require('../db')
+const { maybeForward } = require('../lib/forward')
 
 // GET /api/breakages?resolved=0|1|all&year=YYYY
 router.get('/', (req, res) => {
@@ -56,6 +57,7 @@ router.post('/', (req, res) => {
     notes ?? null
   )
 
+  maybeForward('breakages', result.lastInsertRowid, 'breakage', { tech: tech_name, date: report_date, client: client_name, note: item_broken })
   res.json({ ok: true, id: result.lastInsertRowid })
 })
 

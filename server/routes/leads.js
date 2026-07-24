@@ -2,6 +2,7 @@ const express = require('express')
 const router = express.Router()
 const db = require('../db')
 const { audit } = require('../lib/auth')
+const { calcBonusForMonths } = require('../lib/calcBonus')
 
 const VISITS_PER_YEAR = {
   weekly:          52,
@@ -122,15 +123,17 @@ function calcAnnualValue(initialPrice, recurringPrice, frequency, fallbackPrice,
   return (price && totalVisits) ? Math.round(price * totalVisits) : null
 }
 
-// GET /api/leads?month=2026-04&year=2026&limit=200
+// GET /api/leads?month=2026-04&year=2026&startDate=2026-06-01&endDate=2026-06-15&limit=200
 router.get('/', (req, res) => {
-  const { month, year, limit = 500 } = req.query
+  const { month, year, startDate, endDate, limit = 500 } = req.query
   const settings = db.prepare('SELECT key, value FROM settings WHERE key IN (?, ?)').all('avg_recurring_price', 'avg_onetime_price')
   const cfg = Object.fromEntries(settings.map(s => [s.key, parseFloat(s.value) || null]))
 
   let sql = 'SELECT * FROM lead_records'
   const params = []
-  if (month) {
+  if (startDate && endDate) {
+    sql += ' WHERE record_date BETWEEN ? AND ?'; params.push(startDate, endDate)
+  } else if (month) {
     sql += ' WHERE month = ?'; params.push(month)
   } else if (year) {
     sql += ' WHERE month LIKE ?'; params.push(`${year}-%`)
@@ -151,6 +154,20 @@ router.get('/', (req, res) => {
   })
 
   res.json(enriched)
+})
+
+// GET /api/leads/check?name= — find existing records with matching client name (case-insensitive)
+router.get('/check', (req, res) => {
+  const { name } = req.query
+  if (!name || name.trim().length < 2) return res.json([])
+  const rows = db.prepare(`
+    SELECT id, client_name, rep_name, record_date, month, converted, recurring_retained, frequency
+    FROM lead_records
+    WHERE LOWER(TRIM(client_name)) = LOWER(TRIM(?))
+    ORDER BY record_date DESC
+    LIMIT 10
+  `).all(name.trim())
+  res.json(rows)
 })
 
 // POST /api/leads/bulk — import multiple leads at once (manual catch-up when Zapier is down)
@@ -257,6 +274,10 @@ router.post('/', (req, res) => {
     external_id,
     notes,
     is_flex = 0,
+    is_current_client = 0,
+    converted_date,
+    recurring_converted_date,
+    cancelled_after_initial = 0,
   } = req.body
 
   if (!record_date) return res.status(400).json({ error: 'record_date required' })
@@ -270,37 +291,44 @@ router.post('/', (req, res) => {
   const priceToUse = price_per_clean ?? quote_amount ?? initial_clean_price ?? null
   const annualVal = (visitsAnnual && priceToUse) ? Math.round(parseFloat(priceToUse) * visitsAnnual) : null
 
+  const resolvedConvertedDate = converted ? (converted_date || null) : null
+  const resolvedRecurringConvertedDate = recurring_retained ? (recurring_converted_date || null) : null
+
   db.prepare(`
     INSERT INTO lead_records
       (record_date, client_name, frequency, price_per_clean, quote_amount, initial_clean_price,
        converted, recurring_retained, initial_clean_booked, lead_source, used_before, reason,
-       rep_name, month, source, external_id, notes, annual_value, is_flex)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+       rep_name, month, source, external_id, notes, annual_value, is_flex, is_current_client,
+       converted_date, recurring_converted_date, cancelled_after_initial)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     ON CONFLICT(external_id) DO UPDATE SET
-      record_date           = excluded.record_date,
-      client_name           = excluded.client_name,
-      frequency             = excluded.frequency,
-      price_per_clean       = excluded.price_per_clean,
-      quote_amount          = excluded.quote_amount,
-      initial_clean_price   = excluded.initial_clean_price,
-      converted             = excluded.converted,
-      recurring_retained    = excluded.recurring_retained,
-      initial_clean_booked  = excluded.initial_clean_booked,
-      lead_source           = excluded.lead_source,
-      used_before           = excluded.used_before,
-      reason                = excluded.reason,
-      rep_name              = excluded.rep_name,
-      month                 = excluded.month,
-      source                = excluded.source,
-      notes                 = excluded.notes,
-      annual_value          = COALESCE(excluded.annual_value, annual_value)
+      record_date                = excluded.record_date,
+      client_name                = excluded.client_name,
+      frequency                  = excluded.frequency,
+      price_per_clean            = excluded.price_per_clean,
+      quote_amount               = excluded.quote_amount,
+      initial_clean_price        = excluded.initial_clean_price,
+      converted                  = excluded.converted,
+      recurring_retained         = excluded.recurring_retained,
+      initial_clean_booked       = excluded.initial_clean_booked,
+      lead_source                = excluded.lead_source,
+      used_before                = excluded.used_before,
+      reason                     = excluded.reason,
+      rep_name                   = excluded.rep_name,
+      month                      = excluded.month,
+      source                     = excluded.source,
+      notes                      = excluded.notes,
+      annual_value               = COALESCE(excluded.annual_value, annual_value),
+      cancelled_after_initial    = excluded.cancelled_after_initial
   `).run(
     record_date, client_name ?? null, frequency ?? null,
     price_per_clean ?? null, quote_amount ?? null, initial_clean_price ?? null,
     converted ? 1 : 0, recurring_retained ? 1 : 0, initial_clean_booked ? 1 : 0,
     lead_source ?? null, used_before ?? null, reason ?? null,
     rep_name ?? null, month, source, external_id ?? null, notes ?? null,
-    annualVal, is_flex ? 1 : 0
+    annualVal, is_flex ? 1 : 0, is_current_client ? 1 : 0,
+    resolvedConvertedDate ?? null, resolvedRecurringConvertedDate ?? null,
+    cancelled_after_initial ? 1 : 0
   )
 
   audit(req, 'lead_added', `${client_name || 'Unknown'}`)
@@ -309,6 +337,12 @@ router.post('/', (req, res) => {
   if (recurring_retained) {
     createCareTimeline(client_name || 'Unknown', frequency, record_date)
   }
+
+  // Recalculate bonus for all months this lead could affect
+  const months = new Set([month])
+  if (converted_date) months.add(converted_date.slice(0, 7))
+  if (recurring_converted_date) months.add(recurring_converted_date.slice(0, 7))
+  calcBonusForMonths([...months])
 
   res.json({ ok: true })
 })
@@ -325,8 +359,17 @@ router.patch('/:id', (req, res) => {
   const {
     record_date, client_name, frequency, price_per_clean, quote_amount, initial_clean_price,
     converted, recurring_retained, initial_clean_booked, lead_source, used_before, reason,
-    rep_name, notes, is_flex,
+    rep_name, notes, is_flex, is_current_client, converted_date, recurring_converted_date,
+    cancelled_after_initial,
   } = req.body
+
+  const resolvedConvertedDate = converted_date !== undefined
+    ? (converted_date || null)
+    : (existing.converted_date ?? null)
+
+  const resolvedRecurringConvertedDate = recurring_converted_date !== undefined
+    ? (recurring_converted_date || null)
+    : (existing.recurring_converted_date ?? null)
 
   const updated = {
     record_date:           record_date           ?? existing.record_date,
@@ -343,23 +386,29 @@ router.patch('/:id', (req, res) => {
     reason:                reason                !== undefined ? reason                : existing.reason,
     rep_name:              rep_name              !== undefined ? rep_name              : existing.rep_name,
     notes:                 notes                 !== undefined ? notes                 : existing.notes,
-    is_flex:               is_flex               !== undefined ? (is_flex ? 1 : 0)    : existing.is_flex,
-    month:                 (record_date ?? existing.record_date).slice(0, 7),
+    is_flex:                      is_flex               !== undefined ? (is_flex ? 1 : 0)           : existing.is_flex,
+    is_current_client:            is_current_client     !== undefined ? (is_current_client ? 1 : 0) : existing.is_current_client,
+    converted_date:               resolvedConvertedDate,
+    recurring_converted_date:     resolvedRecurringConvertedDate,
+    cancelled_after_initial:      cancelled_after_initial !== undefined ? (cancelled_after_initial ? 1 : 0) : (existing.cancelled_after_initial ?? 0),
+    month:                        (record_date ?? existing.record_date).slice(0, 7),
   }
 
   db.prepare(`
     UPDATE lead_records SET
       record_date=?, client_name=?, frequency=?, price_per_clean=?, quote_amount=?, initial_clean_price=?,
       converted=?, recurring_retained=?, initial_clean_booked=?, lead_source=?, used_before=?, reason=?,
-      rep_name=?, notes=?, month=?, is_flex=?
+      rep_name=?, notes=?, month=?, is_flex=?, is_current_client=?, converted_date=?, recurring_converted_date=?,
+      cancelled_after_initial=?
     WHERE id=?
   `).run(
     updated.record_date, updated.client_name, updated.frequency,
     updated.price_per_clean, updated.quote_amount, updated.initial_clean_price,
     updated.converted, updated.recurring_retained, updated.initial_clean_booked,
     updated.lead_source, updated.used_before, updated.reason,
-    updated.rep_name, updated.notes, updated.month, updated.is_flex,
-    existing.id
+    updated.rep_name, updated.notes, updated.month, updated.is_flex, updated.is_current_client,
+    updated.converted_date, updated.recurring_converted_date,
+    updated.cancelled_after_initial, existing.id
   )
   audit(req, 'lead_updated', `ID ${existing.id}`)
 
@@ -371,6 +420,17 @@ router.patch('/:id', (req, res) => {
       new Date().toISOString().split('T')[0]
     )
   }
+
+  // Recalculate bonus for all months this lead could affect (before and after values)
+  const affectedMonths = new Set([
+    updated.month,
+    existing.month,
+    updated.converted_date?.slice(0, 7),
+    existing.converted_date?.slice(0, 7),
+    updated.recurring_converted_date?.slice(0, 7),
+    existing.recurring_converted_date?.slice(0, 7),
+  ].filter(Boolean))
+  calcBonusForMonths([...affectedMonths])
 
   res.json({ ok: true })
 })
@@ -434,8 +494,17 @@ router.post('/care/backfill-early-stages', (req, res) => {
 
 // DELETE /api/leads/:id
 router.delete('/:id', (req, res) => {
+  const lead = db.prepare('SELECT month, converted_date, recurring_converted_date FROM lead_records WHERE id = ?').get(req.params.id)
   db.prepare('DELETE FROM lead_records WHERE id = ?').run(req.params.id)
   audit(req, 'lead_deleted', `ID ${req.params.id}`)
+  if (lead) {
+    const months = new Set([
+      lead.month,
+      lead.converted_date?.slice(0, 7),
+      lead.recurring_converted_date?.slice(0, 7),
+    ].filter(Boolean))
+    calcBonusForMonths([...months])
+  }
   res.json({ ok: true })
 })
 

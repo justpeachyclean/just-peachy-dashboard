@@ -12,6 +12,7 @@ const tabs = [
   { path: '/feedback', label: 'Feedback' },
   { path: '/breakages', label: 'Breakages' },
   { path: '/connections', label: 'Connections' },
+  { path: '/reports', label: 'Reports' },
 ]
 
 export default function Navbar() {

@@ -284,9 +284,10 @@ export default function ClientNurture() {
 
       {/* ── JOURNEY PIPELINE TAB ──────────────────────────────────────────── */}
       {tab === 'journey' && (() => {
-        // Group all care records by client name
+        // Group all care records by client name, skip cancelled clients
         const byClient = {}
         care.forEach(r => {
+          if (r.client_cancelled) return
           const key = r.client_name || 'Unknown'
           if (!byClient[key]) byClient[key] = {}
           byClient[key][r.care_type] = r

@@ -429,6 +429,37 @@ router.post('/feedback', (req, res) => {
   res.json({ ok: true })
 })
 
+// POST /api/webhook/mc-lead  — MaidCentral "Lead Created" Zapier trigger
+// MC field names: GivenName, FamilyName, CrmId, LeadDate, Phone, Email, LeadSource
+router.post('/mc-lead', (req, res) => {
+  if (!verifySecret(req, res)) return
+
+  const p = req.body
+  const firstName  = p.GivenName  || p.given_name  || p.first_name  || ''
+  const lastName   = p.FamilyName || p.family_name || p.last_name   || ''
+  const clientName = [firstName, lastName].filter(Boolean).join(' ').trim() || p.client_name || p.name || null
+  const crmId      = p.CrmId      || p.crm_id      || p.lead_id     || p.external_id || null
+  const rawDate    = p.LeadDate   || p.lead_date   || p.created_date || p.record_date || null
+
+  // Normalise date: M/D/YYYY or YYYY-MM-DD → YYYY-MM-DD
+  let eDate = new Date().toISOString().split('T')[0]
+  if (rawDate) {
+    const mdy = String(rawDate).match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/)
+    if (mdy) eDate = `${mdy[3]}-${mdy[1].padStart(2,'0')}-${mdy[2].padStart(2,'0')}`
+    else if (/^\d{4}-\d{2}-\d{2}/.test(rawDate)) eDate = String(rawDate).slice(0, 10)
+  }
+
+  const month = eDate.slice(0, 7)
+
+  db.prepare(`
+    INSERT OR IGNORE INTO lead_records
+      (record_date, client_name, month, converted, source, external_id)
+    VALUES (?, ?, ?, 0, 'maidcentral', ?)
+  `).run(eDate, clientName, month, crmId)
+
+  res.json({ ok: true, client_name: clientName, record_date: eDate })
+})
+
 // POST /api/webhook/test  — sends a test event to verify the connection
 router.post('/test', (req, res) => {
   if (!verifySecret(req, res)) return

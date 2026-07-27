@@ -135,13 +135,28 @@ function CancelRow({ row: r, nurtureRecord, onSaved, onDeleted, onNurtureUpdated
   }
 
   const handleWonBack = async () => {
-    if (!nurtureRecord) return
     if (!window.confirm(`Mark ${r.client_name || 'this client'} as won back?`)) return
-    await apiFetch(`/api/nurture/${nurtureRecord.id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status: 'won_back', won_back: 1, won_back_date: todayEastern() }),
-    })
+    if (nurtureRecord) {
+      await apiFetch(`/api/nurture/${nurtureRecord.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'won_back', won_back: 1, won_back_date: todayEastern() }),
+      })
+    } else {
+      await apiFetch('/api/nurture', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          client_name: r.client_name,
+          cancelled_id: r.id,
+          reason_code: r.reason_code,
+          cancel_date: r.cancel_date,
+          status: 'won_back',
+          won_back: 1,
+          won_back_date: todayEastern(),
+        }),
+      })
+    }
     onNurtureUpdated?.()
   }
 
@@ -316,65 +331,67 @@ function CancelRow({ row: r, nurtureRecord, onSaved, onDeleted, onNurtureUpdated
             </div>
           </div>
           {/* Win-back section */}
-          {nurtureRecord && (
-            <div className="mt-4 pt-3 border-t border-teal-100">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-xs font-semibold text-teal-700">🔄 Win-Back</span>
+          <div className="mt-4 pt-3 border-t border-teal-100">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-semibold text-teal-700">🔄 Win-Back</span>
+              {nurtureRecord && (
                 <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${WB_STATUS_COLORS[nurtureRecord.status] || 'bg-gray-100 text-gray-500'}`}>
                   {WB_STATUS_LABELS[nurtureRecord.status] || nurtureRecord.status}
                 </span>
-              </div>
-              {(nurtureRecord.call_log || []).length > 0 && (
-                <div className="space-y-1 mb-2">
-                  {nurtureRecord.call_log.map((entry, i) => (
-                    <div key={i} className="flex gap-2 text-xs bg-blue-50 rounded px-2 py-1">
-                      <span className="font-semibold text-blue-600 shrink-0">{entry.date}</span>
-                      <span className="text-gray-600">{entry.notes}</span>
-                    </div>
-                  ))}
-                </div>
               )}
-              {showCallLog ? (
-                <div className="flex flex-col gap-2">
-                  <div className="flex gap-3 flex-wrap">
-                    <div className="shrink-0">
-                      <label className="form-label text-xs">Date Called</label>
-                      <input type="date" className="form-input py-1 text-sm" value={callLogEntry.date}
-                        onChange={e => setCallLogEntry(p => ({ ...p, date: e.target.value }))} />
-                    </div>
-                    <div className="flex-1 min-w-[180px]">
-                      <label className="form-label text-xs">Result / Notes</label>
-                      <textarea rows={2} autoFocus className="form-input text-sm"
-                        placeholder="Called, left voicemail. / Spoke with client, interested in returning…"
-                        value={callLogEntry.notes}
-                        onChange={e => setCallLogEntry(p => ({ ...p, notes: e.target.value }))} />
-                    </div>
+            </div>
+            {nurtureRecord && (nurtureRecord.call_log || []).length > 0 && (
+              <div className="space-y-1 mb-2">
+                {nurtureRecord.call_log.map((entry, i) => (
+                  <div key={i} className="flex gap-2 text-xs bg-blue-50 rounded px-2 py-1">
+                    <span className="font-semibold text-blue-600 shrink-0">{entry.date}</span>
+                    <span className="text-gray-600">{entry.notes}</span>
                   </div>
-                  <div className="flex gap-2 justify-end">
-                    <button onClick={() => setShowCallLog(false)} className="text-sm text-gray-400 hover:text-gray-600">Cancel</button>
-                    <button onClick={handleLogCall} disabled={logSaving} className="btn-primary text-sm">
-                      {logSaving ? 'Saving…' : 'Save'}
-                    </button>
+                ))}
+              </div>
+            )}
+            {nurtureRecord && showCallLog ? (
+              <div className="flex flex-col gap-2">
+                <div className="flex gap-3 flex-wrap">
+                  <div className="shrink-0">
+                    <label className="form-label text-xs">Date Called</label>
+                    <input type="date" className="form-input py-1 text-sm" value={callLogEntry.date}
+                      onChange={e => setCallLogEntry(p => ({ ...p, date: e.target.value }))} />
+                  </div>
+                  <div className="flex-1 min-w-[180px]">
+                    <label className="form-label text-xs">Result / Notes</label>
+                    <textarea rows={2} autoFocus className="form-input text-sm"
+                      placeholder="Called, left voicemail. / Spoke with client, interested in returning…"
+                      value={callLogEntry.notes}
+                      onChange={e => setCallLogEntry(p => ({ ...p, notes: e.target.value }))} />
                   </div>
                 </div>
-              ) : (
-                <div className="flex gap-2 flex-wrap">
+                <div className="flex gap-2 justify-end">
+                  <button onClick={() => setShowCallLog(false)} className="text-sm text-gray-400 hover:text-gray-600">Cancel</button>
+                  <button onClick={handleLogCall} disabled={logSaving} className="btn-primary text-sm">
+                    {logSaving ? 'Saving…' : 'Save'}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="flex gap-2 flex-wrap">
+                {nurtureRecord && (
                   <button onClick={() => setShowCallLog(true)}
                     className="text-xs border border-blue-100 bg-blue-50 text-blue-700 px-2 py-1 rounded-lg hover:bg-blue-100 font-medium">
                     📞 Log Call
                   </button>
-                  {nurtureRecord.status !== 'won_back' ? (
-                    <button onClick={handleWonBack}
-                      className="text-xs bg-green-50 border border-green-100 text-green-700 px-2 py-1 rounded-lg hover:bg-green-100 font-medium">
-                      🎉 Mark Won Back
-                    </button>
-                  ) : (
-                    <span className="text-xs text-green-600 font-semibold self-center">✓ Won back {nurtureRecord.won_back_date}</span>
-                  )}
-                </div>
-              )}
-            </div>
-          )}
+                )}
+                {(!nurtureRecord || nurtureRecord.status !== 'won_back') ? (
+                  <button onClick={handleWonBack}
+                    className="text-xs bg-green-50 border border-green-100 text-green-700 px-2 py-1 rounded-lg hover:bg-green-100 font-medium">
+                    🎉 Mark Won Back
+                  </button>
+                ) : (
+                  <span className="text-xs text-green-600 font-semibold self-center">✓ Won back {nurtureRecord.won_back_date}</span>
+                )}
+              </div>
+            )}
+          </div>
 
           <div className="flex items-center justify-between mt-3">
             <button

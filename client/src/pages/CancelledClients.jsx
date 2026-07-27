@@ -17,6 +17,18 @@ const OUTCOME_COLORS = {
   Paused: 'bg-yellow-50 text-yellow-700',
 }
 
+const WB_STATUS_COLORS = {
+  pending:   'bg-yellow-50 text-yellow-700',
+  contacted: 'bg-blue-50 text-blue-700',
+  responded: 'bg-purple-50 text-purple-700',
+  won_back:  'bg-green-50 text-green-700',
+  lost:      'bg-gray-100 text-gray-500',
+}
+const WB_STATUS_LABELS = {
+  pending: 'Pending', contacted: 'Contacted', responded: 'Responded',
+  won_back: 'Won Back', lost: 'Lost',
+}
+
 const CODE_PREFIXES = ['Q','S','P','L','C','T','O']
 const ALL_CODES = {}
 ;['Q','S','P','L','C','T','O'].forEach(p => {
@@ -70,13 +82,18 @@ function BarRow({ label, value, max, color, extra }) {
   )
 }
 
-function CancelRow({ row: r, onSaved, onDeleted }) {
+const todayEastern = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York' }).format(new Date())
+
+function CancelRow({ row: r, nurtureRecord, onSaved, onDeleted, onNurtureUpdated }) {
   const [open, setOpen] = useState(false)
   const [ed, setEd] = useState({})
   const [saving, setSaving] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [editPrice, setEditPrice] = useState('')
   const [editFreq, setEditFreq] = useState('')
+  const [showCallLog, setShowCallLog] = useState(false)
+  const [callLogEntry, setCallLogEntry] = useState({ date: todayEastern(), notes: '' })
+  const [logSaving, setLogSaving] = useState(false)
 
   const cat = r.reason_category || 'Other'
   const set = (k, v) => setEd(p => ({ ...p, [k]: v }))
@@ -101,6 +118,31 @@ function CancelRow({ row: r, onSaved, onDeleted }) {
     setOpen(false)
     setEd({})
     onSaved()
+  }
+
+  const handleLogCall = async () => {
+    if (!callLogEntry.notes.trim() || !nurtureRecord) return
+    setLogSaving(true)
+    await apiFetch(`/api/nurture/${nurtureRecord.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ call_log_entry: callLogEntry }),
+    })
+    setLogSaving(false)
+    setShowCallLog(false)
+    setCallLogEntry({ date: todayEastern(), notes: '' })
+    onNurtureUpdated?.()
+  }
+
+  const handleWonBack = async () => {
+    if (!nurtureRecord) return
+    if (!window.confirm(`Mark ${r.client_name || 'this client'} as won back?`)) return
+    await apiFetch(`/api/nurture/${nurtureRecord.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: 'won_back', won_back: 1, won_back_date: todayEastern() }),
+    })
+    onNurtureUpdated?.()
   }
 
   const displayCode = ed.reason_code ?? r.reason_code
@@ -273,6 +315,67 @@ function CancelRow({ row: r, onSaved, onDeleted }) {
               <label htmlFor={`sa-${r.id}`} className="text-sm text-gray-700 cursor-pointer">Save attempt was made</label>
             </div>
           </div>
+          {/* Win-back section */}
+          {nurtureRecord && (
+            <div className="mt-4 pt-3 border-t border-teal-100">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-semibold text-teal-700">🔄 Win-Back</span>
+                <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${WB_STATUS_COLORS[nurtureRecord.status] || 'bg-gray-100 text-gray-500'}`}>
+                  {WB_STATUS_LABELS[nurtureRecord.status] || nurtureRecord.status}
+                </span>
+              </div>
+              {(nurtureRecord.call_log || []).length > 0 && (
+                <div className="space-y-1 mb-2">
+                  {nurtureRecord.call_log.map((entry, i) => (
+                    <div key={i} className="flex gap-2 text-xs bg-blue-50 rounded px-2 py-1">
+                      <span className="font-semibold text-blue-600 shrink-0">{entry.date}</span>
+                      <span className="text-gray-600">{entry.notes}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {showCallLog ? (
+                <div className="flex flex-col gap-2">
+                  <div className="flex gap-3 flex-wrap">
+                    <div className="shrink-0">
+                      <label className="form-label text-xs">Date Called</label>
+                      <input type="date" className="form-input py-1 text-sm" value={callLogEntry.date}
+                        onChange={e => setCallLogEntry(p => ({ ...p, date: e.target.value }))} />
+                    </div>
+                    <div className="flex-1 min-w-[180px]">
+                      <label className="form-label text-xs">Result / Notes</label>
+                      <textarea rows={2} autoFocus className="form-input text-sm"
+                        placeholder="Called, left voicemail. / Spoke with client, interested in returning…"
+                        value={callLogEntry.notes}
+                        onChange={e => setCallLogEntry(p => ({ ...p, notes: e.target.value }))} />
+                    </div>
+                  </div>
+                  <div className="flex gap-2 justify-end">
+                    <button onClick={() => setShowCallLog(false)} className="text-sm text-gray-400 hover:text-gray-600">Cancel</button>
+                    <button onClick={handleLogCall} disabled={logSaving} className="btn-primary text-sm">
+                      {logSaving ? 'Saving…' : 'Save'}
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex gap-2 flex-wrap">
+                  <button onClick={() => setShowCallLog(true)}
+                    className="text-xs border border-blue-100 bg-blue-50 text-blue-700 px-2 py-1 rounded-lg hover:bg-blue-100 font-medium">
+                    📞 Log Call
+                  </button>
+                  {nurtureRecord.status !== 'won_back' ? (
+                    <button onClick={handleWonBack}
+                      className="text-xs bg-green-50 border border-green-100 text-green-700 px-2 py-1 rounded-lg hover:bg-green-100 font-medium">
+                      🎉 Mark Won Back
+                    </button>
+                  ) : (
+                    <span className="text-xs text-green-600 font-semibold self-center">✓ Won back {nurtureRecord.won_back_date}</span>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
           <div className="flex items-center justify-between mt-3">
             <button
               onClick={async () => {
@@ -317,13 +420,17 @@ export default function CancelledClients() {
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [filter, setFilter] = useState('')
+  const [nurtureRecords, setNurtureRecords] = useState([])
+
+  const loadNurture = () =>
+    apiFetch('/api/nurture').then(r => r.json()).then(setNurtureRecords).catch(() => {})
 
   const load = () =>
     apiFetch(`/api/cancellations?year=${selYear}`)
       .then(r => r.json())
       .then(setData)
 
-  useEffect(() => { load() }, [selYear])
+  useEffect(() => { load(); loadNurture() }, [selYear])
 
   const set = (k, v) => setForm(p => ({ ...p, [k]: v }))
 
@@ -625,9 +732,12 @@ export default function CancelledClients() {
             <div className="grid grid-cols-[90px_1fr_90px_60px_80px_80px_24px] gap-2 px-3 pb-1 border-b border-gray-100 text-xs text-gray-400 uppercase font-medium tracking-wide">
               <span>Date</span><span>Client</span><span className="hidden sm:block">Technician</span><span>Code</span><span className="hidden sm:block">Outcome</span><span className="hidden md:block text-right">Rev/Mo</span><span />
             </div>
-            {rows.map(r => (
-              <CancelRow key={r.id} row={r} onSaved={load} onDeleted={load} />
-            ))}
+            {rows.map(r => {
+              const nurtureRecord = nurtureRecords.find(n => n.cancelled_id === r.id || n.client_name === r.client_name)
+              return (
+                <CancelRow key={r.id} row={r} nurtureRecord={nurtureRecord} onSaved={load} onDeleted={load} onNurtureUpdated={loadNurture} />
+              )
+            })}
           </div>
         )}
       </div>

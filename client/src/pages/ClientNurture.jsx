@@ -724,6 +724,61 @@ export default function ClientNurture() {
       {/* ── WIN-BACK TAB ───────────────────────────────────────────────────── */}
       {tab === 'winback' && (
         <>
+          {/* Monthly activity chart */}
+          {(() => {
+            const now = new Date()
+            const months = Array.from({ length: 6 }, (_, i) => {
+              const d = new Date(now.getFullYear(), now.getMonth() - (5 - i), 1)
+              return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+            })
+            const chartData = months.map(month => {
+              const calls = wbClients.reduce((sum, c) =>
+                sum + (c.call_log || []).filter(e => e.date?.startsWith(month)).length, 0)
+              const won = wbClients.filter(c => c.won_back_date?.startsWith(month)).length
+              return { month, calls, won }
+            })
+            const chartMax = Math.max(1, ...chartData.map(d => Math.max(d.calls, d.won)))
+            const ML = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+            return (
+              <div className="card mb-6">
+                <div className="flex items-center justify-between mb-3">
+                  <h2 className="text-sm font-semibold text-sage uppercase tracking-wider">Win-Back Activity (Last 6 Months)</h2>
+                  <div className="flex gap-3 text-xs text-gray-400">
+                    <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-blue-300 inline-block" /> Calls Logged</span>
+                    <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-green-400 inline-block" /> Won Back</span>
+                  </div>
+                </div>
+                <div className="flex items-end gap-2 h-28">
+                  {chartData.map(({ month, calls, won }) => {
+                    const callPct = Math.round((calls / chartMax) * 100)
+                    const wonPct = Math.round((won / chartMax) * 100)
+                    const label = ML[parseInt(month.split('-')[1]) - 1]
+                    return (
+                      <div key={month} className="flex-1 flex flex-col items-center gap-1">
+                        <div className="w-full flex items-end justify-center gap-0.5" style={{ height: '88px' }}>
+                          <div
+                            className="flex-1 bg-blue-200 rounded-t transition-all"
+                            style={{ height: calls > 0 ? `${callPct}%` : '3px', minHeight: '3px', opacity: calls > 0 ? 1 : 0.3 }}
+                            title={`${calls} call${calls !== 1 ? 's' : ''}`}
+                          />
+                          <div
+                            className="flex-1 bg-green-400 rounded-t transition-all"
+                            style={{ height: won > 0 ? `${wonPct}%` : '3px', minHeight: '3px', opacity: won > 0 ? 1 : 0.3 }}
+                            title={`${won} won back`}
+                          />
+                        </div>
+                        <span className="text-[10px] text-gray-400 leading-none">{label}</span>
+                      </div>
+                    )
+                  })}
+                </div>
+                {chartData.every(d => d.calls === 0 && d.won === 0) && (
+                  <p className="text-xs text-gray-400 text-center mt-2">Log calls using the "📞 Log Call" button on each client to see activity here.</p>
+                )}
+              </div>
+            )
+          })()}
+
           {/* KPI strip */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
             {[

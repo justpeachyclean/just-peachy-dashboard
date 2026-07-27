@@ -81,7 +81,7 @@ export default function ClientNurture() {
   const [wbEditing, setWbEditing] = useState({})
   const [wbSaving, setWbSaving] = useState({})
   const [showAddWb, setShowAddWb] = useState(false)
-  const [addWbForm, setAddWbForm] = useState({ client_name: '', reason_code: 'T1', cancel_date: '', next_contact: '' })
+  const [addWbForm, setAddWbForm] = useState({ client_name: '', reason_code: 'T1', cancel_date: '', next_contact: '', call_date: '', call_notes: '' })
 
   // ── Journey stage panel (inline note + done) ─────────────────────────────
   const [activeStage, setActiveStage] = useState(null) // { clientName, stageKey, careId }
@@ -177,13 +177,15 @@ export default function ClientNurture() {
 
   const handleAddWb = async (e) => {
     e.preventDefault()
+    const { call_date, call_notes, ...rest } = addWbForm
+    const call_log_entry = call_notes.trim() ? { date: call_date || todayEastern(), notes: call_notes.trim() } : undefined
     await apiFetch('/api/nurture', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(addWbForm),
+      body: JSON.stringify({ ...rest, call_log_entry }),
     })
     setShowAddWb(false)
-    setAddWbForm({ client_name: '', reason_code: 'T1', cancel_date: '', next_contact: '' })
+    setAddWbForm({ client_name: '', reason_code: 'T1', cancel_date: '', next_contact: '', call_date: '', call_notes: '' })
     loadWb()
   }
 
@@ -775,6 +777,22 @@ export default function ClientNurture() {
                   <label className="form-label">Next Contact</label>
                   <input type="date" className="form-input" value={addWbForm.next_contact}
                     onChange={e => setAddWbForm(p => ({ ...p, next_contact: e.target.value }))} />
+                </div>
+                <div className="col-span-2 sm:col-span-4 border-t border-gray-100 pt-3 mt-1">
+                  <p className="text-xs font-semibold text-blue-700 mb-2">📞 Log Initial Call (optional)</p>
+                  <div className="flex gap-3 flex-wrap">
+                    <div className="shrink-0">
+                      <label className="form-label text-xs">Date Called</label>
+                      <input type="date" className="form-input py-1 text-sm" value={addWbForm.call_date}
+                        onChange={e => setAddWbForm(p => ({ ...p, call_date: e.target.value }))} />
+                    </div>
+                    <div className="flex-1 min-w-[200px]">
+                      <label className="form-label text-xs">Result / Notes</label>
+                      <textarea rows={2} className="form-input text-sm" value={addWbForm.call_notes}
+                        placeholder="Called, left voicemail. / Spoke with client — interested in returning…"
+                        onChange={e => setAddWbForm(p => ({ ...p, call_notes: e.target.value }))} />
+                    </div>
+                  </div>
                 </div>
                 <div className="col-span-2 sm:col-span-4 flex justify-end">
                   <button type="submit" className="btn-primary text-sm">Add to Queue</button>

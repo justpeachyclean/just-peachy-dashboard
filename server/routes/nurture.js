@@ -54,17 +54,19 @@ router.delete('/:id', (req, res) => {
 
 // POST /api/nurture  (manually add a client to nurture)
 router.post('/', (req, res) => {
-  const { client_id, client_name, reason_code, cancel_date, next_contact } = req.body
+  const { client_id, client_name, reason_code, cancel_date, next_contact, call_log_entry } = req.body
   if (!client_name) return res.status(400).json({ error: 'client_name required' })
 
   const next = next_contact || (() => {
     const d = new Date(); d.setDate(d.getDate() + 30); return d.toISOString().split('T')[0]
   })()
 
+  const initialLog = call_log_entry?.notes?.trim() ? JSON.stringify([call_log_entry]) : null
+
   const result = db.prepare(`
-    INSERT INTO client_nurture (client_id, client_name, reason_code, cancel_date, next_contact)
-    VALUES (?,?,?,?,?)
-  `).run(client_id ?? null, client_name, reason_code ?? null, cancel_date ?? null, next)
+    INSERT INTO client_nurture (client_id, client_name, reason_code, cancel_date, next_contact, call_log)
+    VALUES (?,?,?,?,?,?)
+  `).run(client_id ?? null, client_name, reason_code ?? null, cancel_date ?? null, next, initialLog)
 
   res.json({ ok: true, id: result.lastInsertRowid })
 })

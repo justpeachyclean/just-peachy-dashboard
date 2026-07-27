@@ -184,6 +184,8 @@ const migrations = [
   )`,
   // recleans forward to the Employee dashboard barometer (idempotent via forwarded_at)
   `ALTER TABLE recleans ADD COLUMN forwarded_at TEXT`,
+  // win-back call log (JSON array of {date, notes} entries)
+  `ALTER TABLE client_nurture ADD COLUMN call_log TEXT`,
 ]
 for (const sql of migrations) {
   try { db.exec(sql) } catch (_) { /* column already exists — safe to ignore */ }

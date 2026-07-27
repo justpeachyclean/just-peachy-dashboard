@@ -11,22 +11,30 @@ router.get('/', (req, res) => {
      LEFT JOIN cancelled_clients c ON c.id = n.cancelled_id
      ORDER BY n.next_contact ASC, n.cancel_date DESC`
   ).all()
-  res.json(rows)
+  res.json(rows.map(r => ({ ...r, call_log: r.call_log ? JSON.parse(r.call_log) : [] })))
 })
 
-// PATCH /api/nurture/:id  (update status / notes / next_contact)
+// PATCH /api/nurture/:id  (update status / notes / next_contact / append call log entry)
 router.patch('/:id', (req, res) => {
-  const { status, contact_notes, next_contact, won_back, won_back_date } = req.body
+  const { status, contact_notes, next_contact, won_back, won_back_date, call_log_entry } = req.body
   const { id } = req.params
+
+  if (call_log_entry) {
+    const row = db.prepare('SELECT call_log FROM client_nurture WHERE id=?').get(id)
+    const entries = row?.call_log ? JSON.parse(row.call_log) : []
+    entries.push(call_log_entry)
+    db.prepare(`UPDATE client_nurture SET call_log=?, updated_at=datetime('now') WHERE id=?`)
+      .run(JSON.stringify(entries), id)
+  }
 
   db.prepare(`
     UPDATE client_nurture SET
-      status       = COALESCE(?, status),
+      status        = COALESCE(?, status),
       contact_notes = COALESCE(?, contact_notes),
-      next_contact = COALESCE(?, next_contact),
-      won_back     = COALESCE(?, won_back),
+      next_contact  = COALESCE(?, next_contact),
+      won_back      = COALESCE(?, won_back),
       won_back_date = COALESCE(?, won_back_date),
-      updated_at   = datetime('now')
+      updated_at    = datetime('now')
     WHERE id = ?
   `).run(
     status ?? null, contact_notes ?? null, next_contact ?? null,

@@ -90,8 +90,10 @@ export default function ClientNurture() {
   // ── Quick note state ──────────────────────────────────────────────────────
   const [quickNoteId, setQuickNoteId] = useState(null)   // care item id
   const [quickNoteText, setQuickNoteText] = useState('')
-  const [wbQuickNoteId, setWbQuickNoteId] = useState(null) // win-back id
-  const [wbQuickNoteText, setWbQuickNoteText] = useState('')
+
+  // ── Win-back call log state ───────────────────────────────────────────────
+  const [wbCallLogId, setWbCallLogId] = useState(null)
+  const [wbCallLogEntry, setWbCallLogEntry] = useState({ date: todayEastern(), notes: '' })
 
   const loadCare = () =>
     apiFetch(`/api/care?status=all`).then(r => r.json()).then(setCareData)
@@ -226,14 +228,15 @@ export default function ClientNurture() {
     loadCare()
   }
 
-  const saveWbQuickNote = async (id) => {
+  const saveWbCallLog = async (id) => {
+    if (!wbCallLogEntry.notes.trim() && !wbCallLogEntry.date) return
     await apiFetch(`/api/nurture/${id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ contact_notes: wbQuickNoteText }),
+      body: JSON.stringify({ call_log_entry: wbCallLogEntry }),
     })
-    setWbQuickNoteId(null)
-    setWbQuickNoteText('')
+    setWbCallLogId(null)
+    setWbCallLogEntry({ date: todayEastern(), notes: '' })
     loadWb()
   }
 
@@ -813,15 +816,25 @@ export default function ClientNurture() {
                             {c.next_contact && <span>Follow up: {until >= 0 ? `in ${until}d` : `${Math.abs(until)}d overdue`}</span>}
                           </div>
                           {c.contact_notes && <p className="text-xs text-gray-600 mt-1 bg-gray-50 rounded px-2 py-1">{c.contact_notes}</p>}
+                          {c.call_log?.length > 0 && (
+                            <div className="mt-2 space-y-1">
+                              {c.call_log.map((entry, i) => (
+                                <div key={i} className="flex gap-2 text-xs bg-blue-50 rounded px-2 py-1">
+                                  <span className="font-semibold text-blue-600 shrink-0">{entry.date}</span>
+                                  <span className="text-gray-600">{entry.notes}</span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
                         </div>
                         <div className="flex items-center gap-2 shrink-0">
                           <button
                             onClick={() => {
-                              if (wbQuickNoteId === c.id) { setWbQuickNoteId(null); setWbQuickNoteText('') }
-                              else { setWbQuickNoteId(c.id); setWbQuickNoteText(c.contact_notes || '') }
+                              if (wbCallLogId === c.id) { setWbCallLogId(null); setWbCallLogEntry({ date: todayEastern(), notes: '' }) }
+                              else { setWbCallLogId(c.id); setWbCallLogEntry({ date: todayEastern(), notes: '' }) }
                             }}
                             className="text-xs border border-blue-100 bg-blue-50 text-blue-700 px-2 py-1 rounded-lg hover:bg-blue-100 font-medium"
-                          >📝 Note</button>
+                          >📞 Log Call</button>
                           <button
                             onClick={() => setWbEditing(p => ({ ...p, [c.id]: p[c.id] ? null : {} }))}
                             className="text-xs border border-gray-200 bg-white px-2 py-1 rounded-lg hover:bg-gray-50 font-medium text-gray-600"
@@ -834,20 +847,34 @@ export default function ClientNurture() {
                         </div>
                       </div>
 
-                      {wbQuickNoteId === c.id && (
-                        <div className="mt-3 pt-3 border-t border-blue-100 flex flex-col gap-2">
-                          <label className="text-xs font-semibold text-blue-700">📝 Call Notes</label>
-                          <textarea
-                            rows={3}
-                            autoFocus
-                            className="form-input text-sm"
-                            placeholder="What happened, client response, next steps…"
-                            value={wbQuickNoteText}
-                            onChange={e => setWbQuickNoteText(e.target.value)}
-                          />
+                      {wbCallLogId === c.id && (
+                        <div className="mt-3 pt-3 border-t border-blue-100 flex flex-col gap-3">
+                          <label className="text-xs font-semibold text-blue-700">📞 Log Call</label>
+                          <div className="flex gap-3 flex-wrap">
+                            <div className="shrink-0">
+                              <label className="form-label text-xs">Date Called</label>
+                              <input
+                                type="date"
+                                className="form-input py-1 text-sm"
+                                value={wbCallLogEntry.date}
+                                onChange={e => setWbCallLogEntry(p => ({ ...p, date: e.target.value }))}
+                              />
+                            </div>
+                            <div className="flex-1 min-w-[200px]">
+                              <label className="form-label text-xs">Result / Notes</label>
+                              <textarea
+                                rows={2}
+                                autoFocus
+                                className="form-input text-sm"
+                                placeholder="Called, left voicemail. / Spoke with client — interested in returning…"
+                                value={wbCallLogEntry.notes}
+                                onChange={e => setWbCallLogEntry(p => ({ ...p, notes: e.target.value }))}
+                              />
+                            </div>
+                          </div>
                           <div className="flex gap-2 justify-end">
-                            <button onClick={() => { setWbQuickNoteId(null); setWbQuickNoteText('') }} className="text-sm text-gray-400 hover:text-gray-600">Cancel</button>
-                            <button onClick={() => saveWbQuickNote(c.id)} className="btn-primary text-sm">Save Note</button>
+                            <button onClick={() => { setWbCallLogId(null); setWbCallLogEntry({ date: todayEastern(), notes: '' }) }} className="text-sm text-gray-400 hover:text-gray-600">Cancel</button>
+                            <button onClick={() => saveWbCallLog(c.id)} className="btn-primary text-sm">Save</button>
                           </div>
                         </div>
                       )}

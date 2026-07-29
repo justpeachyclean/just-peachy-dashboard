@@ -412,9 +412,13 @@ router.get('/economics', (req, res) => {
   const ytdRecurringClosed = ytdLeadCounts.leads_in > 0 ? ytdLeadCounts.recurring_closed : ytdSales.recurring_closed
   const ytdOneTimeClosed  = ytdLeadsClosed - ytdRecurringClosed
 
-  // Avg recurring clients across months that have a snapshot
+  // Avg recurring clients AND avg monthly revenue — both over the SAME months that have a client snapshot
+  // so avg_revenue_per_client isn't skewed by months missing a client count
   const clientSnap = db.prepare(`
-    SELECT AVG(recurring_clients) AS avg_clients
+    SELECT
+      AVG(recurring_clients) AS avg_clients,
+      AVG(CASE WHEN invoice_revenue > 0 THEN invoice_revenue ELSE revenue END) AS avg_monthly_revenue,
+      COUNT(*) AS months_with_clients
     FROM monthly_sales WHERE month LIKE ? AND month <= ? AND recurring_clients IS NOT NULL
   `).get(`${year}-%`, currentMonth)
 
@@ -454,8 +458,9 @@ router.get('/economics', (req, res) => {
   const trainingSpend = qb[trainCategory] || 0
 
   // Derived metrics
-  const avgRevenuePerClient = clientSnap.avg_clients > 0
-    ? ytdSales.revenue / ytdSales.months_with_data / clientSnap.avg_clients
+  // Use avg_monthly_revenue from the same months as avg_clients to avoid denominator mismatch
+  const avgRevenuePerClient = clientSnap.avg_clients > 0 && clientSnap.avg_monthly_revenue > 0
+    ? clientSnap.avg_monthly_revenue / clientSnap.avg_clients
     : null
 
   // YTD cancellations: cancelled_clients is the primary source (same logic as /summary)
@@ -468,10 +473,11 @@ router.get('/economics', (req, res) => {
   const ytdCancellations = ccYTD.total > 0 ? ccYTD.total : ytdSales.cancellations
 
   const attritionRate = (() => {
-    const recurring = clientSnap.avg_clients || 0
+    const avgClients = clientSnap.avg_clients || 0
     const cancels = ytdCancellations
-    const atStart = recurring + cancels
-    return atStart > 0 ? cancels / atStart / (ytdSales.months_with_data || 1) : null
+    const months = clientSnap.months_with_clients || ytdSales.months_with_data || 1
+    // Monthly attrition = (cancels per month) / avg active clients
+    return avgClients > 0 ? cancels / months / avgClients : null
   })()
 
   const avgLifetimeMonths = attritionRate > 0 ? 1 / attritionRate : null

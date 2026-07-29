@@ -121,7 +121,7 @@ export default function Sales() {
 
   const ytdQuoteRate = totalLeadsIn > 0 ? totalQuoted / totalLeadsIn : null
   const ytdCloseRate = totalQuoted > 0 ? totalClosed / totalQuoted : null
-  const ytdRetentionRate = totalInitial > 0 ? totalRetained / totalInitial : null
+  const ytdRetentionRate = totalClosed > 0 ? totalRetained / totalClosed : null
 
   // Annualized value: prefer real per-record averages, fall back to revenue ÷ clients
   const avgMonthlyRevPerClient = (() => {
@@ -183,7 +183,7 @@ export default function Sales() {
         <SummaryCard
           label="Initial Retention"
           value={ytdRetentionRate !== null ? fmtPct(ytdRetentionRate) : '—'}
-          sub={`${totalRetained} of ${totalInitial} kept`}
+          sub={`${totalRetained} of ${totalClosed} kept`}
           color={ytdRetentionRate !== null ? (ytdRetentionRate >= 0.6 ? 'border-ok' : 'border-warn') : 'border-gray-200'}
         />
       </div>
@@ -261,7 +261,7 @@ export default function Sales() {
               {rows.map(row => {
                 const quoteRate = row.leads_in > 0 ? row.leads_quoted / row.leads_in : null
                 const closeRate = row.leads_quoted > 0 ? row.leads_closed / row.leads_quoted : null
-                const retentionRate = row.initial_cleans > 0 ? row.retained / row.initial_cleans : null
+                const retentionRate = row.leads_closed > 0 ? row.retained / row.leads_closed : null
                 return (
                   <tr key={row.month} className="border-b border-gray-50 hover:bg-gray-50/50 transition-colors">
                     <td className="py-2.5 pr-3 font-semibold text-ink whitespace-nowrap">{monthLabel(row.month)}</td>

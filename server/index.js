@@ -32,6 +32,7 @@ app.use('/api/staff',          require('./routes/staff'))
 app.use('/api/breakages',      require('./routes/breakages'))
 app.use('/api/recleans',       require('./routes/recleans'))
 app.use('/api/reports',        require('./routes/reports'))
+app.use('/api/referrals',      require('./routes/referrals'))
 
 // Health check
 app.get('/api/health', (req, res) => {
@@ -57,4 +58,6 @@ if (process.env.NODE_ENV === 'production') {
 
 app.listen(PORT, () => {
   console.log(`🍑 Just Peachy server running on http://localhost:${PORT}`)
+  // catch up any recleans that were logged before reclean→Barometer forwarding existed (idempotent)
+  try { require('./lib/forward').backfillRecleans() } catch (_) {}
 })

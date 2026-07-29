@@ -11,6 +11,7 @@ const tabs = [
   { path: '/nurture', label: 'Client Care' },
   { path: '/feedback', label: 'Feedback' },
   { path: '/breakages', label: 'Breakages' },
+  { path: '/referrals', label: 'Referrals' },
   { path: '/connections', label: 'Connections' },
   { path: '/reports', label: 'Reports' },
 ]

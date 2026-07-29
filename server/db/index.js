@@ -186,6 +186,21 @@ const migrations = [
   `ALTER TABLE recleans ADD COLUMN forwarded_at TEXT`,
   // win-back call log (JSON array of {date, notes} entries)
   `ALTER TABLE client_nurture ADD COLUMN call_log TEXT`,
+  `CREATE TABLE IF NOT EXISTS referrals (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    referrer_name       TEXT NOT NULL,
+    client_name         TEXT NOT NULL,
+    referral_date       TEXT NOT NULL,
+    third_clean_date    TEXT,
+    one_year_date       TEXT,
+    payout_150_paid     INTEGER DEFAULT 0,
+    payout_150_date     TEXT,
+    payout_200_paid     INTEGER DEFAULT 0,
+    payout_200_date     TEXT,
+    notes               TEXT,
+    created_at          TEXT DEFAULT (datetime('now')),
+    updated_at          TEXT DEFAULT (datetime('now'))
+  )`,
 ]
 for (const sql of migrations) {
   try { db.exec(sql) } catch (_) { /* column already exists — safe to ignore */ }

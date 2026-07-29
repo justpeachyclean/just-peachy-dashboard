@@ -15,6 +15,7 @@ import Connections from './pages/Connections'
 import Entry from './pages/Entry'
 import Settings from './pages/Settings'
 import Reports from './pages/Reports'
+import Referrals from './pages/Referrals'
 
 function AppShell() {
   const { isLoggedIn, checked } = useAuth()
@@ -48,6 +49,7 @@ function AppShell() {
           <Route path="/connections" element={<Connections />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="/reports" element={<Reports />} />
+          <Route path="/referrals" element={<Referrals />} />
         </Routes>
       </main>
     </div>

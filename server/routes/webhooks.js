@@ -466,7 +466,7 @@ router.post('/mc-lead-converted', (req, res) => {
   if (!verifySecret(req, res)) return
 
   const p = req.body
-  const crmId = p.CrmId || p.crm_id || p.lead_id || p.external_id || null
+  const crmId = req.query.crm_id || p.CrmId || p.crm_id || p.lead_id || p.external_id || null
   const converted = p.converted !== undefined ? Number(p.converted) : 1
   const recurring_retained = p.recurring_retained !== undefined ? Number(p.recurring_retained) : 1
 

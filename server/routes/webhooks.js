@@ -460,6 +460,32 @@ router.post('/mc-lead', (req, res) => {
   res.json({ ok: true, client_name: clientName, record_date: eDate })
 })
 
+// POST /api/webhook/mc-lead-converted  — MaidCentral "Lead Closed" Zapier trigger
+// Updates an existing lead record as converted/retained
+router.post('/mc-lead-converted', (req, res) => {
+  if (!verifySecret(req, res)) return
+
+  const p = req.body
+  const crmId = p.CrmId || p.crm_id || p.lead_id || p.external_id || null
+  const converted = p.converted !== undefined ? Number(p.converted) : 1
+  const recurring_retained = p.recurring_retained !== undefined ? Number(p.recurring_retained) : 1
+
+  if (!crmId) return res.status(400).json({ error: 'crm_id required' })
+
+  const updated = db.prepare(`
+    UPDATE lead_records SET converted = ?, recurring_retained = ?
+    WHERE external_id = ?
+  `).run(converted, recurring_retained, crmId)
+
+  if (updated.changes === 0) {
+    // Lead not found by external_id — return 200 but flag it
+    return res.json({ ok: true, updated: 0, note: 'no matching lead found for crm_id' })
+  }
+
+  audit({ user: { username: 'zapier' } }, 'lead_converted', `Lead converted via webhook: ${crmId}`)
+  res.json({ ok: true, updated: updated.changes, crm_id: crmId })
+})
+
 // POST /api/webhook/test  — sends a test event to verify the connection
 router.post('/test', (req, res) => {
   if (!verifySecret(req, res)) return

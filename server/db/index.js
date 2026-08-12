@@ -225,6 +225,11 @@ try {
   `)
 } catch (_) { /* json_extract may not be available in very old SQLite — safe to skip */ }
 
+// Backfill missing rep_name to Lexi Ledom on every startup
+try {
+  db.exec(`UPDATE lead_records SET rep_name = 'Lexi Ledom' WHERE rep_name IS NULL OR TRIM(rep_name) = ''`)
+} catch (_) {}
+
 // Backfill welcome_call & otc_24hr_call for clients who only have the old 5-stage timeline
 try {
   const INTERVAL = { weekly:7, biweekly:14, 'bi-weekly':14, monthly:28, 'every 4 weeks':28, 'tri-weekly':10 }

@@ -727,6 +727,17 @@ router.get('/setup-guide', (req, res) => {
   })
 })
 
+// POST /api/webhook/migrate-unassigned-reps — one-time fix, remove after use
+router.post('/migrate-unassigned-reps', (req, res) => {
+  if (!verifySecret(req, res)) return
+  const result = db.prepare(`
+    UPDATE lead_records SET rep_name = 'Lexi Ledom'
+    WHERE rep_name IS NULL OR TRIM(rep_name) = ''
+  `).run()
+  audit({ user: { username: 'admin' } }, 'migration', `Assigned ${result.changes} unassigned leads to Lexi Ledom`)
+  res.json({ ok: true, updated: result.changes })
+})
+
 // POST /api/webhook/termination  — MaidCentral fires when an employee is terminated
 // Body: { employee_name, employee_id, termination_date, termination_type (fired|quit), reason }
 router.post('/termination', (req, res) => {

@@ -325,7 +325,7 @@ router.post('/', (req, res) => {
     price_per_clean ?? null, quote_amount ?? null, initial_clean_price ?? null,
     converted ? 1 : 0, recurring_retained ? 1 : 0, initial_clean_booked ? 1 : 0,
     lead_source ?? null, used_before ?? null, reason ?? null,
-    rep_name ?? null, month, source, external_id ?? null, notes ?? null,
+    rep_name ?? 'Lexi Ledom', month, source, external_id ?? null, notes ?? null,
     annualVal, is_flex ? 1 : 0, is_current_client ? 1 : 0,
     resolvedConvertedDate ?? null, resolvedRecurringConvertedDate ?? null,
     cancelled_after_initial ? 1 : 0

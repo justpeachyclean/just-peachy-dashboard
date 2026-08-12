@@ -104,7 +104,7 @@ router.post('/ghl', (req, res) => {
       INSERT OR IGNORE INTO lead_records
         (record_date, client_name, rep_name, frequency, month, converted, source, external_id, used_before)
       VALUES (?, ?, ?, ?, ?, 0, 'ghl', ?, ?)
-    `).run(eDate, clientName, rep_name ?? null, client_freq ?? null, month, extId, usedBefore)
+    `).run(eDate, clientName, rep_name ?? 'Lexi Ledom', client_freq ?? null, month, extId, usedBefore)
     applyPrice(extId)
 
   } else if (QUOTE_TYPES.includes(event_type)) {
@@ -112,7 +112,7 @@ router.post('/ghl', (req, res) => {
       INSERT OR IGNORE INTO lead_records
         (record_date, client_name, rep_name, frequency, month, converted, source, external_id, used_before)
       VALUES (?, ?, ?, ?, ?, 0, 'ghl', ?, ?)
-    `).run(eDate, clientName, rep_name ?? null, client_freq ?? null, month, extId, usedBefore)
+    `).run(eDate, clientName, rep_name ?? 'Lexi Ledom', client_freq ?? null, month, extId, usedBefore)
     applyPrice(extId)
 
   } else if (WON_TYPES.includes(event_type)) {
@@ -121,7 +121,7 @@ router.post('/ghl', (req, res) => {
       INSERT OR IGNORE INTO lead_records
         (record_date, client_name, rep_name, frequency, month, converted, source, external_id, used_before)
       VALUES (?, ?, ?, ?, ?, 0, 'ghl', ?, ?)
-    `).run(eDate, clientName, rep_name ?? null, client_freq ?? null, month, extId, usedBefore)
+    `).run(eDate, clientName, rep_name ?? 'Lexi Ledom', client_freq ?? null, month, extId, usedBefore)
     applyPrice(extId)
 
     if (extId) {
@@ -453,8 +453,8 @@ router.post('/mc-lead', (req, res) => {
 
   db.prepare(`
     INSERT OR IGNORE INTO lead_records
-      (record_date, client_name, month, converted, source, external_id)
-    VALUES (?, ?, ?, 0, 'maidcentral', ?)
+      (record_date, client_name, rep_name, month, converted, source, external_id)
+    VALUES (?, ?, 'Lexi Ledom', ?, 0, 'maidcentral', ?)
   `).run(eDate, clientName, month, crmId)
 
   res.json({ ok: true, client_name: clientName, record_date: eDate })
@@ -725,6 +725,17 @@ router.get('/setup-guide', (req, res) => {
       payload: { contact_id: '{{Contact ID}}', applicant_name: '{{Contact Name}}', phone: '{{Phone}}', email: '{{Email}}', stage: '{{Pipeline Stage Name}}', stage_date: '{{Date YYYY-MM-DD}}', position: 'Cleaning Technician' }
     }
   })
+})
+
+// POST /api/webhook/migrate-unassigned-reps — one-time fix, remove after use
+router.post('/migrate-unassigned-reps', (req, res) => {
+  if (!verifySecret(req, res)) return
+  const result = db.prepare(`
+    UPDATE lead_records SET rep_name = 'Lexi Ledom'
+    WHERE rep_name IS NULL OR TRIM(rep_name) = ''
+  `).run()
+  audit({ user: { username: 'admin' } }, 'migration', `Assigned ${result.changes} unassigned leads to Lexi Ledom`)
+  res.json({ ok: true, updated: result.changes })
 })
 
 // POST /api/webhook/termination  — MaidCentral fires when an employee is terminated

@@ -727,26 +727,68 @@ router.get('/setup-guide', (req, res) => {
   })
 })
 
-// GET /api/webhook/diagnose-duplicates — temporary diagnostic, remove after use
-router.get('/diagnose-duplicates', (req, res) => {
+// POST /api/webhook/deduplicate-leads — temporary cleanup, remove after use
+router.post('/deduplicate-leads', (req, res) => {
   if (!verifySecret(req, res)) return
-  const dupes = db.prepare(`
-    SELECT LOWER(TRIM(client_name)) AS name_key,
-           COUNT(*) AS cnt,
-           GROUP_CONCAT(id, ',') AS ids,
-           GROUP_CONCAT(COALESCE(source,'?'), ',') AS sources,
-           GROUP_CONCAT(COALESCE(external_id,'NULL'), ' | ') AS ext_ids,
-           GROUP_CONCAT(COALESCE(record_date,'?'), ',') AS dates,
-           GROUP_CONCAT(COALESCE(frequency,''), ',') AS freqs,
-           GROUP_CONCAT(COALESCE(CAST(price_per_clean AS TEXT),''), ',') AS prices,
-           GROUP_CONCAT(COALESCE(CAST(converted AS TEXT),''), ',') AS converted_vals,
-           GROUP_CONCAT(COALESCE(rep_name,''), ',') AS reps
+
+  // Find all duplicate client name groups
+  const groups = db.prepare(`
+    SELECT LOWER(TRIM(client_name)) AS name_key
     FROM lead_records
     GROUP BY LOWER(TRIM(client_name))
-    HAVING cnt > 1
-    ORDER BY cnt DESC, name_key
+    HAVING COUNT(*) > 1
   `).all()
-  res.json({ total_duplicate_groups: dupes.length, groups: dupes })
+
+  const deleted = []
+  const kept = []
+
+  for (const { name_key } of groups) {
+    const rows = db.prepare(`
+      SELECT *,
+        (COALESCE(converted, 0) * 10) +
+        (COALESCE(recurring_retained, 0) * 8) +
+        (COALESCE(initial_clean_booked, 0) * 4) +
+        (CASE WHEN frequency IS NOT NULL AND frequency != '' THEN 2 ELSE 0 END) +
+        (CASE WHEN price_per_clean IS NOT NULL THEN 2 ELSE 0 END) +
+        (CASE WHEN quote_amount IS NOT NULL THEN 1 ELSE 0 END) +
+        (CASE WHEN annual_value IS NOT NULL THEN 1 ELSE 0 END) +
+        (CASE WHEN initial_clean_price IS NOT NULL THEN 1 ELSE 0 END) +
+        (CASE WHEN rep_name IS NOT NULL AND rep_name != '' THEN 1 ELSE 0 END) +
+        (CASE WHEN notes IS NOT NULL AND notes != '' THEN 1 ELSE 0 END)
+        AS score
+      FROM lead_records
+      WHERE LOWER(TRIM(client_name)) = ?
+      ORDER BY score DESC, id DESC
+    `).all(name_key)
+
+    const winner = rows[0]
+    const losers = rows.slice(1)
+
+    kept.push({ id: winner.id, name: winner.client_name, score: winner.score })
+
+    for (const loser of losers) {
+      // Merge any fields the winner is missing
+      const updates = {}
+      if (!winner.frequency && loser.frequency) updates.frequency = loser.frequency
+      if (!winner.price_per_clean && loser.price_per_clean) updates.price_per_clean = loser.price_per_clean
+      if (!winner.quote_amount && loser.quote_amount) updates.quote_amount = loser.quote_amount
+      if (!winner.initial_clean_price && loser.initial_clean_price) updates.initial_clean_price = loser.initial_clean_price
+      if (!winner.annual_value && loser.annual_value) updates.annual_value = loser.annual_value
+      if (!winner.lead_source && loser.lead_source) updates.lead_source = loser.lead_source
+      if (!winner.notes && loser.notes) updates.notes = loser.notes
+
+      if (Object.keys(updates).length > 0) {
+        const cols = Object.keys(updates).map(k => `${k} = ?`).join(', ')
+        db.prepare(`UPDATE lead_records SET ${cols} WHERE id = ?`).run(...Object.values(updates), winner.id)
+      }
+
+      db.prepare('DELETE FROM lead_records WHERE id = ?').run(loser.id)
+      deleted.push({ id: loser.id, name: loser.client_name, score: loser.score })
+    }
+  }
+
+  audit({ user: { username: 'admin' } }, 'dedup', `Removed ${deleted.length} duplicate lead records across ${groups.length} client groups`)
+  res.json({ ok: true, groups_cleaned: groups.length, records_deleted: deleted.length, kept, deleted })
 })
 
 // POST /api/webhook/termination  — MaidCentral fires when an employee is terminated

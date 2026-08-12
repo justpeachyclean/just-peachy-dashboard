@@ -727,6 +727,28 @@ router.get('/setup-guide', (req, res) => {
   })
 })
 
+// GET /api/webhook/diagnose-duplicates — temporary diagnostic, remove after use
+router.get('/diagnose-duplicates', (req, res) => {
+  if (!verifySecret(req, res)) return
+  const dupes = db.prepare(`
+    SELECT LOWER(TRIM(client_name)) AS name_key,
+           COUNT(*) AS cnt,
+           GROUP_CONCAT(id, ',') AS ids,
+           GROUP_CONCAT(COALESCE(source,'?'), ',') AS sources,
+           GROUP_CONCAT(COALESCE(external_id,'NULL'), ' | ') AS ext_ids,
+           GROUP_CONCAT(COALESCE(record_date,'?'), ',') AS dates,
+           GROUP_CONCAT(COALESCE(frequency,''), ',') AS freqs,
+           GROUP_CONCAT(COALESCE(CAST(price_per_clean AS TEXT),''), ',') AS prices,
+           GROUP_CONCAT(COALESCE(CAST(converted AS TEXT),''), ',') AS converted_vals,
+           GROUP_CONCAT(COALESCE(rep_name,''), ',') AS reps
+    FROM lead_records
+    GROUP BY LOWER(TRIM(client_name))
+    HAVING cnt > 1
+    ORDER BY cnt DESC, name_key
+  `).all()
+  res.json({ total_duplicate_groups: dupes.length, groups: dupes })
+})
+
 // POST /api/webhook/termination  — MaidCentral fires when an employee is terminated
 // Body: { employee_name, employee_id, termination_date, termination_type (fired|quit), reason }
 router.post('/termination', (req, res) => {

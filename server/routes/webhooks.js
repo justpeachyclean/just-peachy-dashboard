@@ -99,29 +99,52 @@ router.post('/ghl', (req, res) => {
     }
   }
 
-  if (NEW_LEAD_TYPES.includes(event_type)) {
+  // Find or create a lead record, deduplicating by external_id first, then name+month.
+  // GHL fires multiple events per contact (new_lead, quote_sent, opportunity_won) with
+  // different external_ids — this prevents each event from creating a separate row.
+  const findOrCreateLead = () => {
+    // 1. Exact match by external_id
+    if (extId) {
+      const existing = db.prepare('SELECT id FROM lead_records WHERE external_id = ?').get(extId)
+      if (existing) return existing.id
+    }
+    // 2. Match by name + month (same person, different GHL event external_id)
+    if (clientName) {
+      const existing = db.prepare(
+        'SELECT id FROM lead_records WHERE LOWER(TRIM(client_name)) = LOWER(TRIM(?)) AND month = ? ORDER BY id DESC LIMIT 1'
+      ).get(clientName, month)
+      if (existing) {
+        // Merge in any new data from this event without overwriting existing values
+        db.prepare(`
+          UPDATE lead_records SET
+            external_id   = COALESCE(external_id, ?),
+            frequency     = COALESCE(frequency, ?),
+            rep_name      = COALESCE(rep_name, ?),
+            used_before   = COALESCE(used_before, ?)
+          WHERE id = ?
+        `).run(extId ?? null, client_freq ?? null, rep_name ?? 'Lexi Ledom', usedBefore ?? null, existing.id)
+        return existing.id
+      }
+    }
+    // 3. Insert new record
     db.prepare(`
-      INSERT OR IGNORE INTO lead_records
+      INSERT INTO lead_records
         (record_date, client_name, rep_name, frequency, month, converted, source, external_id, used_before)
       VALUES (?, ?, ?, ?, ?, 0, 'ghl', ?, ?)
     `).run(eDate, clientName, rep_name ?? 'Lexi Ledom', client_freq ?? null, month, extId, usedBefore)
+    return db.prepare('SELECT last_insert_rowid() AS id').get().id
+  }
+
+  if (NEW_LEAD_TYPES.includes(event_type)) {
+    findOrCreateLead()
     applyPrice(extId)
 
   } else if (QUOTE_TYPES.includes(event_type)) {
-    db.prepare(`
-      INSERT OR IGNORE INTO lead_records
-        (record_date, client_name, rep_name, frequency, month, converted, source, external_id, used_before)
-      VALUES (?, ?, ?, ?, ?, 0, 'ghl', ?, ?)
-    `).run(eDate, clientName, rep_name ?? 'Lexi Ledom', client_freq ?? null, month, extId, usedBefore)
+    findOrCreateLead()
     applyPrice(extId)
 
   } else if (WON_TYPES.includes(event_type)) {
-    // Create record if GHL only fires on won (skipped earlier stages)
-    db.prepare(`
-      INSERT OR IGNORE INTO lead_records
-        (record_date, client_name, rep_name, frequency, month, converted, source, external_id, used_before)
-      VALUES (?, ?, ?, ?, ?, 0, 'ghl', ?, ?)
-    `).run(eDate, clientName, rep_name ?? 'Lexi Ledom', client_freq ?? null, month, extId, usedBefore)
+    findOrCreateLead()
     applyPrice(extId)
 
     if (extId) {

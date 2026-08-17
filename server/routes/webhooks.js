@@ -103,10 +103,28 @@ router.post('/ghl', (req, res) => {
   // GHL fires multiple events per contact (new_lead, quote_sent, opportunity_won) with
   // different external_ids — this prevents each event from creating a separate row.
   const findOrCreateLead = () => {
-    // 1. Exact match by external_id
+    // 1. Exact match by extId (opportunity_id if present, else contact_id)
     if (extId) {
       const existing = db.prepare('SELECT id FROM lead_records WHERE external_id = ?').get(extId)
       if (existing) return existing.id
+    }
+    // 1.5. When this event has an opportunity_id (extId = opportunity_id), also try matching
+    //      by contact_id — handles records created by new_lead events (which have no
+    //      opportunity_id, so they store contact_id as external_id).
+    if (opportunity_id && contact_id) {
+      const existing = db.prepare('SELECT id FROM lead_records WHERE external_id = ?').get(contact_id)
+      if (existing) {
+        db.prepare(`
+          UPDATE lead_records SET
+            external_id   = COALESCE(external_id, ?),
+            client_name   = CASE WHEN client_name = ? THEN COALESCE(?, client_name) ELSE COALESCE(client_name, ?) END,
+            frequency     = COALESCE(frequency, ?),
+            rep_name      = COALESCE(rep_name, ?),
+            used_before   = COALESCE(used_before, ?)
+          WHERE id = ?
+        `).run(opportunity_id, contact_id, clientName, clientName, client_freq ?? null, rep_name ?? 'Lexi Ledom', usedBefore ?? null, existing.id)
+        return existing.id
+      }
     }
     // 2. Match by name + month (same person, different GHL event external_id)
     if (clientName) {
@@ -114,7 +132,6 @@ router.post('/ghl', (req, res) => {
         'SELECT id FROM lead_records WHERE LOWER(TRIM(client_name)) = LOWER(TRIM(?)) AND month = ? ORDER BY id DESC LIMIT 1'
       ).get(clientName, month)
       if (existing) {
-        // Merge in any new data from this event without overwriting existing values
         db.prepare(`
           UPDATE lead_records SET
             external_id   = COALESCE(external_id, ?),

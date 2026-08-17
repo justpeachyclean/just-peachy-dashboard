@@ -230,6 +230,56 @@ try {
   db.exec(`UPDATE lead_records SET rep_name = 'Lexi Ledom' WHERE rep_name IS NULL OR TRIM(rep_name) = ''`)
 } catch (_) {}
 
+// One-time: delete duplicate ghl lead records created by multi-event GHL contacts
+// (new_lead + opportunity_won each created a separate row before the dedup fix)
+try {
+  const alreadyDone = db.prepare("SELECT value FROM settings WHERE key='ghl_dedup_v1'").get()
+  if (!alreadyDone) {
+    const dupes = db.prepare(`
+      SELECT LOWER(TRIM(client_name)) AS name_key, month
+      FROM lead_records
+      WHERE source = 'ghl' AND client_name IS NOT NULL AND LENGTH(client_name) < 60
+      GROUP BY LOWER(TRIM(client_name)), month
+      HAVING COUNT(*) > 1
+    `).all()
+
+    let removed = 0
+    db.transaction(() => {
+      for (const { name_key, month } of dupes) {
+        // Fetch all records for this name+month, sorted best-first
+        const rows = db.prepare(`
+          SELECT id, converted, quote_amount, price_per_clean, frequency, used_before, rep_name
+          FROM lead_records
+          WHERE LOWER(TRIM(client_name)) = ? AND month = ? AND source = 'ghl'
+          ORDER BY converted DESC, COALESCE(quote_amount, 0) DESC, COALESCE(price_per_clean, 0) DESC, id ASC
+        `).all(name_key, month)
+        if (rows.length < 2) continue
+        const keeper = rows[0]
+        const loserIds = rows.slice(1).map(r => r.id)
+        // Merge best values from losers into keeper before deleting
+        for (const loser of rows.slice(1)) {
+          db.prepare(`
+            UPDATE lead_records SET
+              converted       = MAX(converted, ?),
+              quote_amount    = COALESCE(quote_amount, ?),
+              price_per_clean = COALESCE(price_per_clean, ?),
+              frequency       = COALESCE(frequency, ?),
+              used_before     = COALESCE(used_before, ?),
+              rep_name        = COALESCE(rep_name, ?)
+            WHERE id = ?
+          `).run(loser.converted || 0, loser.quote_amount, loser.price_per_clean, loser.frequency, loser.used_before, loser.rep_name, keeper.id)
+        }
+        for (const lid of loserIds) {
+          db.prepare('DELETE FROM lead_records WHERE id = ?').run(lid)
+          removed++
+        }
+      }
+    })()
+    db.prepare("INSERT INTO settings (key, value) VALUES ('ghl_dedup_v1', '1')").run()
+    if (removed > 0) console.log(`✅ Removed ${removed} duplicate GHL lead records`)
+  }
+} catch(e) { console.warn('GHL dedup cleanup skipped:', e.message) }
+
 // Backfill welcome_call & otc_24hr_call for clients who only have the old 5-stage timeline
 try {
   const INTERVAL = { weekly:7, biweekly:14, 'bi-weekly':14, monthly:28, 'every 4 weeks':28, 'tri-weekly':10 }

@@ -431,6 +431,11 @@ const BLANK = {
   last_cleaner:'', last_clean_date:'',
 }
 
+const currentMonthKey = () => {
+  const now = new Date()
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+}
+
 export default function CancelledClients() {
   const year = new Date().getFullYear()
   const [selYear, setSelYear] = useState(year)
@@ -440,7 +445,8 @@ export default function CancelledClients() {
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [filter, setFilter] = useState('')
-  const [reasonFilter, setReasonFilter] = useState(null) // category name or reason code string
+  const [reasonFilter, setReasonFilter] = useState(null)
+  const [monthFilter, setMonthFilter] = useState(currentMonthKey) // default to current month
   const [nurtureRecords, setNurtureRecords] = useState([])
 
   const loadNurture = () =>
@@ -452,6 +458,11 @@ export default function CancelledClients() {
       .then(setData)
 
   useEffect(() => { load(); loadNurture() }, [selYear])
+  // When switching to a past year, clear the month filter so all months show
+  useEffect(() => {
+    if (selYear !== year) setMonthFilter(null)
+    else setMonthFilter(currentMonthKey())
+  }, [selYear])
 
   const set = (k, v) => setForm(p => ({ ...p, [k]: v }))
 
@@ -483,13 +494,13 @@ export default function CancelledClients() {
   const toggleReason = (val) => setReasonFilter(prev => prev === val ? null : val)
 
   const rows = (data?.cancellations || []).filter(r => {
+    if (monthFilter && !r.cancel_date?.startsWith(monthFilter)) return false
     if (filter && !(
       (r.client_name || '').toLowerCase().includes(filter.toLowerCase()) ||
       (r.reason_code || '').toLowerCase().includes(filter.toLowerCase()) ||
       (r.technician || '').toLowerCase().includes(filter.toLowerCase())
     )) return false
     if (reasonFilter) {
-      // reasonFilter is either a category name or an exact code
       const isCode = reasonFilter.length <= 2
       if (isCode) return r.reason_code === reasonFilter
       return (r.reason_category || 'Other') === reasonFilter || (r.reason_code && CODE_CATEGORIES[r.reason_code[0]] === reasonFilter)
@@ -683,21 +694,34 @@ export default function CancelledClients() {
 
       {/* By Month */}
       <div className="card mb-6">
-        <h2 className="text-sm font-semibold text-sage uppercase tracking-wider mb-4">By Month{reasonFilter ? <span className="ml-2 text-brand font-normal normal-case text-xs">· filtered</span> : ''}</h2>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-sm font-semibold text-sage uppercase tracking-wider">
+            By Month{reasonFilter ? <span className="ml-2 text-brand font-normal normal-case text-xs">· filtered</span> : ''}
+          </h2>
+          {monthFilter && (
+            <button onClick={() => setMonthFilter(null)} className="text-xs text-gray-400 hover:text-gray-700 font-medium">Show all months</button>
+          )}
+        </div>
         <div className="grid grid-cols-6 sm:grid-cols-12 gap-x-2">
-          {monthRows.map(({ label, count, annual }) => {
+          {monthRows.map(({ label, key, count, annual }) => {
             const BAR_MAX_PX = 56
             const barH = monthMax > 0 ? Math.max(count > 0 ? 4 : 0, Math.round((count / monthMax) * BAR_MAX_PX)) : 0
+            const isActive = monthFilter === key
             return (
-              <div key={label} className="flex flex-col items-center gap-0.5">
-                <span className="text-xs font-semibold text-ink h-4 leading-4">{count > 0 ? count : ''}</span>
+              <div
+                key={label}
+                className={`flex flex-col items-center gap-0.5 cursor-pointer rounded-lg px-0.5 pt-0.5 transition-colors ${isActive ? 'bg-brand/10' : 'hover:bg-gray-50'}`}
+                onClick={() => setMonthFilter(prev => prev === key ? null : key)}
+                title={`Filter to ${label}`}
+              >
+                <span className={`text-xs font-semibold h-4 leading-4 ${isActive ? 'text-brand' : 'text-ink'}`}>{count > 0 ? count : ''}</span>
                 <div className="w-full flex items-end justify-center" style={{ height: BAR_MAX_PX }}>
                   <div
-                    className="w-full rounded-sm bg-brand/70 transition-all"
+                    className={`w-full rounded-sm transition-all ${isActive ? 'bg-brand' : 'bg-brand/40'}`}
                     style={{ height: barH }}
                   />
                 </div>
-                <span className="text-[10px] text-gray-400 font-medium mt-1">{label}</span>
+                <span className={`text-[10px] font-medium mt-1 ${isActive ? 'text-brand font-semibold' : 'text-gray-400'}`}>{label}</span>
                 {count > 0 && annual > 0 && (
                   <span className="text-[9px] text-gray-400 leading-tight text-center">{fmt$(annual)}</span>
                 )}

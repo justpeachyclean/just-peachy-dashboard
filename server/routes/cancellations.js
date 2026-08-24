@@ -21,6 +21,7 @@ router.get('/', (req, res) => {
   const byCategory = {}
   const byCode = {}
   const byTechnician = {}
+  const byMonth = {}
   let totalLost = 0, totalSaved = 0, totalPaused = 0
   let revenueLost = 0, annualLost = 0
 
@@ -49,6 +50,12 @@ router.get('/', (req, res) => {
     else if (r.save_outcome === 'Paused') totalPaused++
     revenueLost += r.revenue_lost_monthly || 0
     annualLost  += r.annual_value_lost    || 0
+    if (r.cancel_date) {
+      const mo = r.cancel_date.slice(0, 7) // "2026-03"
+      if (!byMonth[mo]) byMonth[mo] = { count: 0, annual: 0 }
+      byMonth[mo].count++
+      byMonth[mo].annual += r.annual_value_lost || 0
+    }
   })
 
   res.json({
@@ -64,6 +71,7 @@ router.get('/', (req, res) => {
       by_category: byCategory,
       by_code: byCode,
       by_technician: byTechnician,
+      by_month: byMonth,
     },
   })
 })

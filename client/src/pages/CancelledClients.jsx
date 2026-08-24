@@ -485,6 +485,15 @@ export default function CancelledClients() {
   const catMax = Math.max(1, ...Object.values(stats.by_category || {}))
   const years = Array.from({ length: 5 }, (_, i) => year - 2 + i)
 
+  // Build a full 12-month array for the selected year so empty months still show
+  const MONTH_LABELS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+  const byMonth = stats.by_month || {}
+  const monthRows = MONTH_LABELS.map((label, i) => {
+    const key = `${selYear}-${String(i + 1).padStart(2, '0')}`
+    return { label, key, count: byMonth[key]?.count || 0, annual: byMonth[key]?.annual || 0 }
+  })
+  const monthMax = Math.max(1, ...monthRows.map(m => m.count))
+
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
@@ -637,6 +646,34 @@ export default function CancelledClients() {
             <p className="text-xs text-gray-400 mt-0.5">{sub}</p>
           </div>
         ))}
+      </div>
+
+      {/* By Month */}
+      <div className="card mb-6">
+        <h2 className="text-sm font-semibold text-sage uppercase tracking-wider mb-4">By Month</h2>
+        <div className="grid grid-cols-6 sm:grid-cols-12 gap-x-2 gap-y-3">
+          {monthRows.map(({ label, count, annual }) => {
+            const pct = monthMax > 0 ? Math.round((count / monthMax) * 100) : 0
+            return (
+              <div key={label} className="flex flex-col items-center gap-1 group relative">
+                <span className="text-xs font-semibold text-ink">{count > 0 ? count : ''}</span>
+                <div className="w-full bg-gray-100 rounded-t h-16 flex items-end overflow-hidden">
+                  <div
+                    className="w-full bg-brand/70 rounded-t transition-all"
+                    style={{ height: count > 0 ? `${Math.max(8, pct)}%` : '0%' }}
+                  />
+                </div>
+                <span className="text-[10px] text-gray-400 font-medium">{label}</span>
+                {count > 0 && annual > 0 && (
+                  <span className="text-[9px] text-gray-400">{fmt$(annual)}</span>
+                )}
+              </div>
+            )
+          })}
+        </div>
+        {stats.total === 0 && (
+          <p className="text-sm text-gray-400 text-center py-4 -mt-2">No cancellations logged yet.</p>
+        )}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-6">

@@ -68,10 +68,13 @@ function calcLoss(price, freq) {
   }
 }
 
-function BarRow({ label, value, max, color, extra }) {
+function BarRow({ label, value, max, color, extra, onClick, active }) {
   const pct = max > 0 ? Math.round((value / max) * 100) : 0
   return (
-    <div className="flex items-center gap-3 py-1">
+    <div
+      className={`flex items-center gap-3 py-1 rounded-lg px-1 -mx-1 transition-colors ${onClick ? 'cursor-pointer hover:bg-gray-50' : ''} ${active ? 'bg-brand/5 ring-1 ring-brand/20' : ''}`}
+      onClick={onClick}
+    >
       <span className="text-xs text-gray-600 w-40 shrink-0 truncate">{label}</span>
       <div className="flex-1 bg-gray-100 rounded-full h-2">
         <div className={`h-2 rounded-full ${color}`} style={{ width: `${pct}%` }} />
@@ -437,6 +440,7 @@ export default function CancelledClients() {
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [filter, setFilter] = useState('')
+  const [reasonFilter, setReasonFilter] = useState(null) // category name or reason code string
   const [nurtureRecords, setNurtureRecords] = useState([])
 
   const loadNurture = () =>
@@ -476,20 +480,35 @@ export default function CancelledClients() {
   }
 
   const stats = data?.stats || {}
-  const rows = (data?.cancellations || []).filter(r =>
-    !filter || (r.client_name || '').toLowerCase().includes(filter.toLowerCase()) ||
-    (r.reason_code || '').toLowerCase().includes(filter.toLowerCase()) ||
-    (r.technician || '').toLowerCase().includes(filter.toLowerCase())
-  )
+  const toggleReason = (val) => setReasonFilter(prev => prev === val ? null : val)
+
+  const rows = (data?.cancellations || []).filter(r => {
+    if (filter && !(
+      (r.client_name || '').toLowerCase().includes(filter.toLowerCase()) ||
+      (r.reason_code || '').toLowerCase().includes(filter.toLowerCase()) ||
+      (r.technician || '').toLowerCase().includes(filter.toLowerCase())
+    )) return false
+    if (reasonFilter) {
+      // reasonFilter is either a category name or an exact code
+      const isCode = reasonFilter.length <= 2
+      if (isCode) return r.reason_code === reasonFilter
+      return (r.reason_category || 'Other') === reasonFilter || (r.reason_code && CODE_CATEGORIES[r.reason_code[0]] === reasonFilter)
+    }
+    return true
+  })
 
   const catMax = Math.max(1, ...Object.values(stats.by_category || {}))
   const years = Array.from({ length: 5 }, (_, i) => year - 2 + i)
 
-  // Build a full 12-month array for the selected year so empty months still show
+  // Build a full 12-month array — when a reasonFilter is active, recompute from filtered rows
   const MONTH_LABELS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
-  const byMonth = stats.by_month || {}
   const monthRows = MONTH_LABELS.map((label, i) => {
     const key = `${selYear}-${String(i + 1).padStart(2, '0')}`
+    if (reasonFilter) {
+      const matching = rows.filter(r => r.cancel_date?.startsWith(key))
+      return { label, key, count: matching.length, annual: matching.reduce((s, r) => s + (r.annual_value_lost || 0), 0) }
+    }
+    const byMonth = stats.by_month || {}
     return { label, key, count: byMonth[key]?.count || 0, annual: byMonth[key]?.annual || 0 }
   })
   const monthMax = Math.max(1, ...monthRows.map(m => m.count))
@@ -648,31 +667,46 @@ export default function CancelledClients() {
         ))}
       </div>
 
+      {/* Active reason filter banner */}
+      {reasonFilter && (
+        <div className="mb-4 flex items-center gap-3 px-4 py-2 bg-brand/5 border border-brand/20 rounded-xl text-sm">
+          <span className="text-gray-600">Filtered by reason:</span>
+          <span className="font-semibold text-brand">
+            {reasonFilter.length <= 2
+              ? `${reasonFilter} — ${REASON_CODES[reasonFilter] || reasonFilter}`
+              : reasonFilter}
+          </span>
+          <span className="text-xs text-gray-400">({rows.length} cancellation{rows.length !== 1 ? 's' : ''})</span>
+          <button onClick={() => setReasonFilter(null)} className="ml-auto text-xs text-gray-400 hover:text-gray-700 font-medium">✕ Clear filter</button>
+        </div>
+      )}
+
       {/* By Month */}
       <div className="card mb-6">
-        <h2 className="text-sm font-semibold text-sage uppercase tracking-wider mb-4">By Month</h2>
-        <div className="grid grid-cols-6 sm:grid-cols-12 gap-x-2 gap-y-3">
+        <h2 className="text-sm font-semibold text-sage uppercase tracking-wider mb-4">By Month{reasonFilter ? <span className="ml-2 text-brand font-normal normal-case text-xs">· filtered</span> : ''}</h2>
+        <div className="grid grid-cols-6 sm:grid-cols-12 gap-x-2">
           {monthRows.map(({ label, count, annual }) => {
-            const pct = monthMax > 0 ? Math.round((count / monthMax) * 100) : 0
+            const BAR_MAX_PX = 56
+            const barH = monthMax > 0 ? Math.max(count > 0 ? 4 : 0, Math.round((count / monthMax) * BAR_MAX_PX)) : 0
             return (
-              <div key={label} className="flex flex-col items-center gap-1 group relative">
-                <span className="text-xs font-semibold text-ink">{count > 0 ? count : ''}</span>
-                <div className="w-full bg-gray-100 rounded-t h-16 flex items-end overflow-hidden">
+              <div key={label} className="flex flex-col items-center gap-0.5">
+                <span className="text-xs font-semibold text-ink h-4 leading-4">{count > 0 ? count : ''}</span>
+                <div className="w-full flex items-end justify-center" style={{ height: BAR_MAX_PX }}>
                   <div
-                    className="w-full bg-brand/70 rounded-t transition-all"
-                    style={{ height: count > 0 ? `${Math.max(8, pct)}%` : '0%' }}
+                    className="w-full rounded-sm bg-brand/70 transition-all"
+                    style={{ height: barH }}
                   />
                 </div>
-                <span className="text-[10px] text-gray-400 font-medium">{label}</span>
+                <span className="text-[10px] text-gray-400 font-medium mt-1">{label}</span>
                 {count > 0 && annual > 0 && (
-                  <span className="text-[9px] text-gray-400">{fmt$(annual)}</span>
+                  <span className="text-[9px] text-gray-400 leading-tight text-center">{fmt$(annual)}</span>
                 )}
               </div>
             )
           })}
         </div>
         {stats.total === 0 && (
-          <p className="text-sm text-gray-400 text-center py-4 -mt-2">No cancellations logged yet.</p>
+          <p className="text-sm text-gray-400 text-center py-4">No cancellations logged yet.</p>
         )}
       </div>
 
@@ -682,23 +716,29 @@ export default function CancelledClients() {
           <h2 className="text-sm font-semibold text-sage uppercase tracking-wider mb-4">By Category</h2>
           {Object.keys(stats.by_category || {}).length === 0
             ? <p className="text-sm text-gray-400 text-center py-6">No cancellations logged yet.</p>
-            : Object.entries(stats.by_category)
-                .sort(([,a],[,b]) => b - a)
-                .map(([cat, count]) => (
-                  <BarRow
-                    key={cat}
-                    label={cat}
-                    value={count}
-                    max={catMax}
-                    color={cat === 'Service / Quality' ? 'bg-red-400' :
-                           cat === 'Pricing / Value' ? 'bg-yellow-400' :
-                           cat === 'Temporary / Pause Worthy' ? 'bg-teal-400' :
-                           cat === 'Life Changes' ? 'bg-blue-400' :
-                           cat === 'Scheduling / Consistency' ? 'bg-orange-400' :
-                           cat === 'Communication' ? 'bg-purple-400' : 'bg-gray-300'}
-                    extra={stats.total > 0 ? `${Math.round((count/stats.total)*100)}%` : null}
-                  />
-                ))
+            : <>
+                <p className="text-xs text-gray-400 mb-2">Click a category to filter</p>
+                {Object.entries(stats.by_category)
+                  .sort(([,a],[,b]) => b - a)
+                  .map(([cat, count]) => (
+                    <BarRow
+                      key={cat}
+                      label={cat}
+                      value={count}
+                      max={catMax}
+                      color={cat === 'Service / Quality' ? 'bg-red-400' :
+                             cat === 'Pricing / Value' ? 'bg-yellow-400' :
+                             cat === 'Temporary / Pause Worthy' ? 'bg-teal-400' :
+                             cat === 'Life Changes' ? 'bg-blue-400' :
+                             cat === 'Scheduling / Consistency' ? 'bg-orange-400' :
+                             cat === 'Communication' ? 'bg-purple-400' : 'bg-gray-300'}
+                      extra={stats.total > 0 ? `${Math.round((count/stats.total)*100)}%` : null}
+                      onClick={() => toggleReason(cat)}
+                      active={reasonFilter === cat}
+                    />
+                  ))
+                }
+              </>
           }
         </div>
 
@@ -722,10 +762,16 @@ export default function CancelledClients() {
                     .slice(0, 8)
                     .map(([code, count]) => {
                       const cat = CODE_CATEGORIES[code[0]] || 'Other'
+                      const isActive = reasonFilter === code
                       return (
-                        <tr key={code} className="border-b border-gray-50">
+                        <tr
+                          key={code}
+                          className={`border-b border-gray-50 cursor-pointer transition-colors ${isActive ? 'bg-brand/5' : 'hover:bg-gray-50'}`}
+                          onClick={() => toggleReason(code)}
+                          title="Click to filter by this code"
+                        >
                           <td className="py-1.5 pr-3">
-                            <span className={`text-xs font-bold px-1.5 py-0.5 rounded ${CATEGORY_COLORS[cat]}`}>{code}</span>
+                            <span className={`text-xs font-bold px-1.5 py-0.5 rounded ${CATEGORY_COLORS[cat]} ${isActive ? 'ring-1 ring-brand' : ''}`}>{code}</span>
                           </td>
                           <td className="py-1.5 pr-3 text-gray-600 text-xs">{REASON_CODES[code] || code}</td>
                           <td className="py-1.5 text-right font-semibold text-ink">{count}</td>

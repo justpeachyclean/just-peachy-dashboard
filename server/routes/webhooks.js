@@ -805,6 +805,16 @@ router.post('/termination', (req, res) => {
   res.json({ ok: true })
 })
 
+// ── QuickBooks diagnostic (secret-protected) ───────────────────────────────
+// GET /api/webhook/qb-debug
+router.get('/qb-debug', (req, res) => {
+  if (!verifySecret(req, res)) return
+  const txns = db.prepare('SELECT * FROM qb_transactions ORDER BY txn_date DESC LIMIT 50').all()
+  const exp  = db.prepare("SELECT * FROM quickbooks_expenses WHERE month LIKE '2026-%' ORDER BY month").all()
+  const cat  = db.prepare("SELECT value FROM settings WHERE key='qb_marketing_category'").get()
+  res.json({ qb_marketing_category: cat?.value, qb_transactions_count: txns.length, qb_transactions: txns, quickbooks_expenses_2026: exp })
+})
+
 // ── QuickBooks Marketing Expense (Zapier) ──────────────────────────────────
 // POST /api/webhook/qb-expense
 // Zapier trigger: New Transaction in QB filtered to "6005 *Marketing"

@@ -834,7 +834,10 @@ router.post('/qb-expense', (req, res) => {
   if (mdy) isoDate = `${mdy[3]}-${mdy[1].padStart(2,'0')}-${mdy[2].padStart(2,'0')}`
   const month = isoDate.slice(0, 7)
 
-  const cat = (category || '6005 *Marketing').toString().trim()
+  // Always use the canonical marketing category from settings — ignore whatever Zapier sends.
+  // This endpoint is purpose-built for QB marketing expenses only, so the incoming category
+  // field is irrelevant and often differs from the setting (e.g. Zapier sends "Advertising").
+  const cat = db.prepare("SELECT value FROM settings WHERE key='qb_marketing_category'").get()?.value || '6005 *Marketing'
 
   // Unique key for idempotency — use txn_id if provided, else date+amount+vendor
   const uniqueKey = txn_id

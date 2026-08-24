@@ -280,6 +280,34 @@ try {
   }
 } catch(e) { console.warn('GHL dedup cleanup skipped:', e.message) }
 
+// One-time: normalize all qb_transactions to the canonical marketing category and recompute monthly totals.
+// Fixes the case where Zapier sent a different category string (e.g. "Advertising") before the webhook
+// was updated to always use the settings value.
+try {
+  const alreadyDone = db.prepare("SELECT value FROM settings WHERE key='qb_category_normalize_v1'").get()
+  if (!alreadyDone) {
+    const canonCat = db.prepare("SELECT value FROM settings WHERE key='qb_marketing_category'").get()?.value || '6005 *Marketing'
+    // Re-categorize any transactions that don't already use the canonical name
+    const changed = db.prepare(`UPDATE qb_transactions SET category = ? WHERE category != ?`).run(canonCat, canonCat)
+    if (changed.changes > 0) {
+      // Recompute monthly totals from the corrected transactions
+      const months = db.prepare(`SELECT DISTINCT month FROM qb_transactions WHERE category = ?`).all(canonCat)
+      for (const { month } of months) {
+        const total = db.prepare(`SELECT COALESCE(SUM(amount),0) AS t FROM qb_transactions WHERE month=? AND category=?`).get(month, canonCat).t
+        db.prepare(`
+          INSERT INTO quickbooks_expenses (month, category, amount, synced_at)
+          VALUES (?, ?, ?, datetime('now'))
+          ON CONFLICT(month, category) DO UPDATE SET amount=excluded.amount, synced_at=datetime('now')
+        `).run(month, canonCat, Math.round(total * 100) / 100)
+      }
+      console.log(`✅ Re-categorized ${changed.changes} qb_transactions to "${canonCat}" and recomputed ${months.length} monthly totals`)
+    }
+    // Also delete any quickbooks_expenses rows with stale category names (now replaced above)
+    db.prepare(`DELETE FROM quickbooks_expenses WHERE category != ?`).run(canonCat)
+    db.prepare("INSERT INTO settings (key, value) VALUES ('qb_category_normalize_v1', '1')").run()
+  }
+} catch(e) { console.warn('QB category normalize skipped:', e.message) }
+
 // Backfill welcome_call & otc_24hr_call for clients who only have the old 5-stage timeline
 try {
   const INTERVAL = { weekly:7, biweekly:14, 'bi-weekly':14, monthly:28, 'every 4 weeks':28, 'tri-weekly':10 }

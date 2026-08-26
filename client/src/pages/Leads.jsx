@@ -501,6 +501,8 @@ export default function Leads() {
   const [saving, setSaving] = useState(false)
   const [careMsg, setCareMsg] = useState(null)
   const [dupMatches, setDupMatches] = useState([])
+  const [sortCol, setSortCol] = useState('record_date')
+  const [sortDir, setSortDir] = useState('desc')
 
   // Check for duplicate client name when adding (not editing)
   useEffect(() => {
@@ -635,6 +637,23 @@ export default function Leads() {
              (r.notes || '').toLowerCase().includes(q)
     }
     return true
+  })
+
+  function toggleSort(col) {
+    if (sortCol === col) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
+    else { setSortCol(col); setSortDir('asc') }
+  }
+
+  const sorted = [...visible].sort((a, b) => {
+    const mul = sortDir === 'asc' ? 1 : -1
+    const av = a[sortCol], bv = b[sortCol]
+    if (av == null && bv == null) return 0
+    if (av == null) return mul
+    if (bv == null) return -mul
+    if (typeof av === 'number' || typeof bv === 'number') {
+      return ((Number(av) || 0) - (Number(bv) || 0)) * mul
+    }
+    return String(av).localeCompare(String(bv)) * mul
   })
 
   const converted      = leads.filter(r => r.converted)
@@ -798,28 +817,42 @@ export default function Leads() {
         <table className="w-full text-sm min-w-[900px]">
           <thead>
             <tr className="text-xs text-gray-400 uppercase border-b border-gray-100">
-              <th className="text-left py-2 pr-2 font-medium">Date</th>
-              <th className="text-left py-2 px-2 font-medium">Rep</th>
-              <th className="text-left py-2 px-2 font-medium">Client</th>
-              <th className="text-center py-2 px-2 font-medium">Frequency</th>
-              <th className="text-right py-2 px-2 font-medium">Quote</th>
-              <th className="text-right py-2 px-2 font-medium">Annual Val.</th>
-              <th className="text-center py-2 px-2 font-medium">Conv?</th>
-              <th className="text-center py-2 px-2 font-medium" title="Initial clean booked">Init?</th>
-              <th className="text-center py-2 px-2 font-medium">Recur?</th>
-              <th className="text-left py-2 px-2 font-medium">Source</th>
+              {[
+                { col: 'record_date',        label: 'Date',        align: 'left',   pad: 'py-2 pr-2' },
+                { col: 'rep_name',           label: 'Rep',         align: 'left',   pad: 'py-2 px-2' },
+                { col: 'client_name',        label: 'Client',      align: 'left',   pad: 'py-2 px-2' },
+                { col: 'frequency',          label: 'Frequency',   align: 'center', pad: 'py-2 px-2' },
+                { col: 'quote_amount',       label: 'Quote',       align: 'right',  pad: 'py-2 px-2' },
+                { col: 'annual_value',       label: 'Annual Val.', align: 'right',  pad: 'py-2 px-2' },
+                { col: 'converted',          label: 'Conv?',       align: 'center', pad: 'py-2 px-2' },
+                { col: 'initial_clean_booked', label: 'Init?',     align: 'center', pad: 'py-2 px-2', title: 'Initial clean booked' },
+                { col: 'recurring_retained', label: 'Recur?',      align: 'center', pad: 'py-2 px-2' },
+                { col: 'lead_source',        label: 'Source',      align: 'left',   pad: 'py-2 px-2' },
+              ].map(({ col, label, align, pad, title }) => (
+                <th
+                  key={col}
+                  className={`text-${align} ${pad} font-medium cursor-pointer select-none hover:text-gray-600 whitespace-nowrap`}
+                  title={title}
+                  onClick={() => toggleSort(col)}
+                >
+                  {label}
+                  {sortCol === col
+                    ? <span className="ml-1 text-brand">{sortDir === 'asc' ? '↑' : '↓'}</span>
+                    : <span className="ml-1 opacity-20">↕</span>}
+                </th>
+              ))}
               <th className="py-2 pl-2"></th>
             </tr>
           </thead>
           <tbody>
-            {visible.length === 0 ? (
+            {sorted.length === 0 ? (
               <tr>
                 <td colSpan={11} className="text-center py-12 text-gray-400 text-sm">
                   No leads for {monthLabel}.{' '}
                   <button onClick={() => { setEditId(null); setForm(BLANK_FORM); setShowForm(true) }} className="text-brand underline">Add one →</button>
                 </td>
               </tr>
-            ) : visible.map(r => (
+            ) : sorted.map(r => (
               <tr key={r.id} className={`border-b border-gray-50 hover:bg-gray-50/40 cursor-pointer ${r.converted ? '' : 'opacity-60'}`} onClick={() => openEdit(r)}>
                 <td className="py-2 pr-2 text-gray-500 whitespace-nowrap text-xs">{r.record_date}</td>
                 <td className="py-2 px-2 text-gray-500 text-xs">{r.rep_name || '—'}</td>

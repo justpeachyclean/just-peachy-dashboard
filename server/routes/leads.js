@@ -493,6 +493,86 @@ router.post('/care/backfill-early-stages', (req, res) => {
 })
 
 // DELETE /api/leads/:id
+// GET /api/leads/ledger  — all recurring clients with tenure & estimated clean count
+router.get('/ledger', (req, res) => {
+  const today = new Date().toISOString().split('T')[0]
+
+  const clients = db.prepare(`
+    SELECT id, client_name, frequency, price_per_clean, annual_value,
+           recurring_converted_date, record_date, is_flex
+    FROM lead_records
+    WHERE converted=1 AND recurring_retained=1
+      AND (cancelled_after_initial IS NULL OR cancelled_after_initial=0)
+    ORDER BY recurring_converted_date DESC, record_date DESC
+  `).all()
+
+  // Build a set of cancelled client names for cross-reference
+  const cancelledRows = db.prepare(`
+    SELECT LOWER(TRIM(client_name)) AS key, MAX(cancel_date) AS cancel_date
+    FROM cancelled_clients
+    WHERE (save_outcome IS NULL OR save_outcome != 'Saved')
+    GROUP BY key
+  `).all()
+  const cancelledMap = new Map(cancelledRows.map(c => [c.key, c.cancel_date]))
+
+  const VISITS_PER_MONTH = {
+    weekly: 4.33, biweekly: 2.17, 'bi-weekly': 2.17,
+    monthly: 1, 'tri-weekly': 3.25, 'every 4 weeks': 1,
+  }
+
+  const enriched = clients.map(r => {
+    const startDate = r.recurring_converted_date || r.record_date
+    const nameKey = (r.client_name || '').toLowerCase().trim()
+    const cancelDate = cancelledMap.get(nameKey) || null
+    const isActive = !cancelDate || cancelDate > today
+
+    let monthsAsClient = null
+    let estimatedCleans = null
+    if (startDate) {
+      const start = new Date(startDate + 'T12:00:00Z')
+      const now = new Date()
+      monthsAsClient = Math.max(0,
+        (now.getFullYear() - start.getFullYear()) * 12 +
+        (now.getMonth() - start.getMonth()) +
+        (now.getDate() - start.getDate()) / 30
+      )
+      const freq = (r.frequency || '').toLowerCase().trim()
+      const vpm = VISITS_PER_MONTH[freq]
+      if (vpm != null) estimatedCleans = Math.round(monthsAsClient * vpm)
+    }
+
+    return {
+      ...r,
+      start_date: startDate,
+      cancel_date: cancelDate,
+      is_active: isActive,
+      months_as_client: monthsAsClient != null ? Math.round(monthsAsClient * 10) / 10 : null,
+      estimated_cleans: estimatedCleans,
+    }
+  })
+
+  const active  = enriched.filter(r => r.is_active)
+  const danger  = active.filter(r => r.estimated_cleans != null && r.estimated_cleans < 6)
+  const cliff   = active.filter(r => r.estimated_cleans != null && r.estimated_cleans >= 4 && r.estimated_cleans < 6)
+  const survived = active.filter(r => r.estimated_cleans != null && r.estimated_cleans >= 6)
+  const noStart  = active.filter(r => r.estimated_cleans == null)
+
+  const totalAnnualLTV = active.reduce((s, r) => s + (r.annual_value || 0), 0)
+
+  res.json({
+    clients: enriched,
+    stats: {
+      total_active: active.length,
+      danger_zone: danger.length,
+      at_cliff: cliff.length,
+      survived: survived.length,
+      no_start_date: noStart.length,
+      total_annual_ltv: Math.round(totalAnnualLTV),
+      avg_annual_ltv: active.length > 0 ? Math.round(totalAnnualLTV / active.length) : 0,
+    },
+  })
+})
+
 router.delete('/:id', (req, res) => {
   const lead = db.prepare('SELECT month, converted_date, recurring_converted_date FROM lead_records WHERE id = ?').get(req.params.id)
   db.prepare('DELETE FROM lead_records WHERE id = ?').run(req.params.id)

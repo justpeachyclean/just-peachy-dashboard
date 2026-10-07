@@ -52,7 +52,7 @@ function calcBonusForMonths(months) {
         if (l.is_flex || l.is_current_client) continue
         const nameKey = (l.client_name || '').toLowerCase().trim()
 
-        if (l.month === month && (l.price_per_clean != null || l.quote_amount != null) && !seenQuotes.has(nameKey)) {
+        if (l.month === month && (l.price_per_clean > 0 || l.quote_amount > 0) && !seenQuotes.has(nameKey)) {
           seenQuotes.add(nameKey)
           quotes_given++
         }

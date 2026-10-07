@@ -89,7 +89,7 @@ router.get('/summary', (req, res) => {
   const leadCounts = db.prepare(`
     SELECT
       COUNT(*) AS leads_in,
-      COUNT(CASE WHEN price_per_clean IS NOT NULL OR quote_amount IS NOT NULL THEN 1 END) AS leads_quoted,
+      COUNT(CASE WHEN price_per_clean > 0 OR quote_amount > 0 THEN 1 END) AS leads_quoted,
       COUNT(CASE WHEN converted=1 THEN 1 END) AS leads_closed,
       COUNT(CASE WHEN converted=1 AND LOWER(TRIM(COALESCE(frequency,''))) NOT IN ('one_type','one-time','one time','','priority','move out','ttb','general') THEN 1 END) AS recurring_closed,
       COUNT(CASE WHEN initial_clean_booked=1 THEN 1 END) AS initial_cleans_booked,
@@ -311,7 +311,7 @@ router.get('/monthly', (req, res) => {
     const mlc = db.prepare(`
       SELECT
         COUNT(*) AS leads_in,
-        COUNT(CASE WHEN price_per_clean IS NOT NULL OR quote_amount IS NOT NULL THEN 1 END) AS leads_quoted,
+        COUNT(CASE WHEN price_per_clean > 0 OR quote_amount > 0 THEN 1 END) AS leads_quoted,
         COUNT(CASE WHEN converted=1 THEN 1 END) AS leads_closed,
         COUNT(CASE WHEN converted=1 AND LOWER(TRIM(COALESCE(frequency,''))) NOT IN ('one_type','one-time','one time','','priority','move out','ttb','general') THEN 1 END) AS recurring_closed,
         COUNT(CASE WHEN initial_clean_booked=1 THEN 1 END) AS initial_cleans_booked,
@@ -400,7 +400,7 @@ router.get('/economics', (req, res) => {
   const ytdLeadCounts = db.prepare(`
     SELECT
       COUNT(*) AS leads_in,
-      COUNT(CASE WHEN price_per_clean IS NOT NULL OR quote_amount IS NOT NULL THEN 1 END) AS leads_quoted,
+      COUNT(CASE WHEN price_per_clean > 0 OR quote_amount > 0 THEN 1 END) AS leads_quoted,
       COUNT(CASE WHEN converted=1 THEN 1 END) AS leads_closed,
       COUNT(CASE WHEN converted=1 AND recurring_retained=1 THEN 1 END) AS recurring_closed
     FROM lead_records WHERE month LIKE ? AND month <= ?

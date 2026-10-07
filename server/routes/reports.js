@@ -40,7 +40,7 @@ router.get('/snapshot', (req, res) => {
   const leads = db.prepare(`
     SELECT
       COUNT(*) AS total,
-      COUNT(CASE WHEN price_per_clean IS NOT NULL OR quote_amount IS NOT NULL OR initial_clean_price IS NOT NULL THEN 1 END) AS quoted,
+      COUNT(CASE WHEN price_per_clean > 0 OR quote_amount > 0 OR initial_clean_price > 0 THEN 1 END) AS quoted,
       COUNT(CASE WHEN converted=1 THEN 1 END) AS converted,
       COUNT(CASE WHEN initial_clean_booked=1 THEN 1 END) AS initial_clean_booked,
       COUNT(CASE WHEN recurring_retained=1 AND (cancelled_after_initial IS NULL OR cancelled_after_initial=0) THEN 1 END) AS recurring_retained

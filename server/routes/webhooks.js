@@ -43,6 +43,7 @@ router.post('/ghl', (req, res) => {
     rep_name,
     client_freq,
     event_date,
+    phone,
   } = payload
 
   if (!event_type) return res.status(400).json({ error: 'event_type required' })
@@ -121,9 +122,10 @@ router.post('/ghl', (req, res) => {
             client_name   = CASE WHEN client_name = ? THEN COALESCE(?, client_name) ELSE COALESCE(client_name, ?) END,
             frequency     = COALESCE(frequency, ?),
             rep_name      = COALESCE(rep_name, ?),
-            used_before   = COALESCE(used_before, ?)
+            used_before   = COALESCE(used_before, ?),
+            phone         = COALESCE(phone, ?)
           WHERE id = ?
-        `).run(opportunity_id, contact_id, clientName, clientName, client_freq ?? null, rep_name ?? 'Lexi Ledom', usedBefore ?? null, existing.id)
+        `).run(opportunity_id, contact_id, clientName, clientName, client_freq ?? null, rep_name ?? 'Lexi Ledom', usedBefore ?? null, phone ?? null, existing.id)
         return existing.id
       }
     }
@@ -138,18 +140,19 @@ router.post('/ghl', (req, res) => {
             external_id   = COALESCE(external_id, ?),
             frequency     = COALESCE(frequency, ?),
             rep_name      = COALESCE(rep_name, ?),
-            used_before   = COALESCE(used_before, ?)
+            used_before   = COALESCE(used_before, ?),
+            phone         = COALESCE(phone, ?)
           WHERE id = ?
-        `).run(extId ?? null, client_freq ?? null, rep_name ?? 'Lexi Ledom', usedBefore ?? null, existing.id)
+        `).run(extId ?? null, client_freq ?? null, rep_name ?? 'Lexi Ledom', usedBefore ?? null, phone ?? null, existing.id)
         return existing.id
       }
     }
     // 3. Insert new record
     db.prepare(`
       INSERT INTO lead_records
-        (record_date, client_name, rep_name, frequency, month, converted, source, external_id, used_before)
-      VALUES (?, ?, ?, ?, ?, 0, 'ghl', ?, ?)
-    `).run(eDate, clientName, rep_name ?? 'Lexi Ledom', client_freq ?? null, month, extId, usedBefore)
+        (record_date, client_name, rep_name, frequency, month, converted, source, external_id, used_before, phone)
+      VALUES (?, ?, ?, ?, ?, 0, 'ghl', ?, ?, ?)
+    `).run(eDate, clientName, rep_name ?? 'Lexi Ledom', client_freq ?? null, month, extId, usedBefore, phone ?? null)
     return db.prepare('SELECT last_insert_rowid() AS id').get().id
   }
 
@@ -480,6 +483,7 @@ router.post('/mc-lead', (req, res) => {
   const lastName   = p.FamilyName || p.family_name || p.last_name   || ''
   const clientName = [firstName, lastName].filter(Boolean).join(' ').trim() || p.client_name || p.name || null
   const crmId      = p.CrmId      || p.crm_id      || p.lead_id     || p.external_id || null
+  const rawPhone   = p.Phone      || p.phone        || p.PhoneNumber || null
   const rawDate    = p.LeadDate   || p.lead_date   || p.created_date || p.record_date || null
 
   // Normalise date: M/D/YYYY or YYYY-MM-DD → YYYY-MM-DD
@@ -494,11 +498,104 @@ router.post('/mc-lead', (req, res) => {
 
   db.prepare(`
     INSERT OR IGNORE INTO lead_records
-      (record_date, client_name, rep_name, month, converted, source, external_id)
-    VALUES (?, ?, 'Lexi Ledom', ?, 0, 'maidcentral', ?)
-  `).run(eDate, clientName, month, crmId)
+      (record_date, client_name, rep_name, month, converted, source, external_id, phone)
+    VALUES (?, ?, 'Lexi Ledom', ?, 0, 'maidcentral', ?, ?)
+  `).run(eDate, clientName, month, crmId, rawPhone ?? null)
 
   res.json({ ok: true, client_name: clientName, record_date: eDate })
+})
+
+// POST /api/webhook/mc-booking — MaidCentral "Quote Booked" Zapier trigger
+// Fires when a client books via MC. Matches lead by phone number, then updates
+// converted / initial_clean_booked / recurring_retained. Flags for review if
+// the phone matches zero or more than one active lead.
+//
+// Zapier fields: Phone, GivenName, FamilyName, BookingType ("initial" | "recurring")
+// BookingType is optional; defaults to "initial" which sets both converted and initial_clean_booked.
+router.post('/mc-booking', (req, res) => {
+  if (!verifySecret(req, res)) return
+
+  const p = req.body
+  const rawPhone    = p.Phone || p.phone || p.PhoneNumber || null
+  const firstName   = p.GivenName  || p.given_name  || p.first_name  || ''
+  const lastName    = p.FamilyName || p.family_name || p.last_name   || ''
+  const clientName  = [firstName, lastName].filter(Boolean).join(' ').trim() || p.client_name || p.name || null
+  const bookingType = (p.BookingType || p.booking_type || 'initial').toLowerCase()
+
+  if (!rawPhone && !clientName) {
+    return res.status(400).json({ error: 'phone or client_name required' })
+  }
+
+  // Normalise phone to digits only for comparison
+  const normPhone = rawPhone ? String(rawPhone).replace(/\D/g, '') : null
+
+  // Match active (non-merged) lead records by normalised phone
+  let matches = []
+  if (normPhone) {
+    const allLeads = db.prepare(
+      `SELECT id, client_name, record_date, phone FROM lead_records WHERE is_merged IS NULL OR is_merged = 0`
+    ).all()
+    matches = allLeads.filter(r => r.phone && String(r.phone).replace(/\D/g, '') === normPhone)
+  }
+
+  // If phone gave 0 or 2+ matches, try client name as tiebreaker / fallback
+  if (matches.length !== 1 && clientName) {
+    const normName = clientName.trim().toLowerCase()
+    const nameMatches = db.prepare(
+      `SELECT id, client_name, record_date, phone
+       FROM lead_records
+       WHERE (is_merged IS NULL OR is_merged = 0)
+         AND LOWER(TRIM(client_name)) = ?
+       ORDER BY record_date DESC LIMIT 5`
+    ).all(normName)
+    if (nameMatches.length === 1) {
+      matches = nameMatches
+    } else if (nameMatches.length > 1 && matches.length === 0) {
+      matches = nameMatches
+    }
+  }
+
+  const today = new Date().toISOString().split('T')[0]
+
+  if (matches.length === 1) {
+    const lead = matches[0]
+    // Store phone on record if missing
+    if (normPhone && !lead.phone) {
+      db.prepare(`UPDATE lead_records SET phone = ? WHERE id = ?`).run(rawPhone, lead.id)
+    }
+    if (bookingType === 'recurring') {
+      db.prepare(
+        `UPDATE lead_records SET recurring_retained = 1, recurring_converted_date = COALESCE(recurring_converted_date, ?) WHERE id = ?`
+      ).run(today, lead.id)
+    } else {
+      // initial or default: mark converted + initial_clean_booked
+      db.prepare(
+        `UPDATE lead_records SET converted = 1, converted_date = COALESCE(converted_date, ?), initial_clean_booked = 1 WHERE id = ?`
+      ).run(today, lead.id)
+    }
+    return res.json({ ok: true, matched: lead.id, client: lead.client_name, booking_type: bookingType })
+  }
+
+  // 0 or 2+ matches — flag for manual review
+  const reason = matches.length === 0
+    ? `no_phone_match — phone ${rawPhone} not found for "${clientName || 'unknown'}"`
+    : `ambiguous_phone_match — phone ${rawPhone} matched ${matches.length} leads: ${matches.map(m => `${m.client_name}(${m.id})`).join(', ')}`
+
+  if (matches.length >= 2) {
+    // Insert one flag per pair so the review panel shows them
+    const first = matches[0], second = matches[1]
+    db.prepare(`
+      INSERT INTO lead_dedup_flags (lead_a_id, lead_b_id, lead_a_name, lead_b_name, lead_a_date, lead_b_date, match_reason)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(first.id, second.id, first.client_name, second.client_name, first.record_date, second.record_date, reason)
+  }
+
+  // Log in audit for visibility even on 0-match
+  db.prepare(
+    `INSERT INTO audit_log (action_type, entity, description, user) VALUES ('booking_flag', 'lead_records', ?, 'zapier')`
+  ).run(reason)
+
+  return res.json({ ok: false, flagged: true, reason, matches: matches.map(m => ({ id: m.id, client: m.client_name })) })
 })
 
 // POST /api/webhook/mc-lead-converted  — MaidCentral "Lead Closed" Zapier trigger

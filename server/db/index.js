@@ -223,6 +223,8 @@ const migrations = [
     notes        TEXT,
     created_at   TEXT DEFAULT (datetime('now'))
   )`,
+  // Phone number for phone-based booking match from MC Zapier
+  `ALTER TABLE lead_records ADD COLUMN phone TEXT`,
 ]
 for (const sql of migrations) {
   try { db.exec(sql) } catch (_) { /* column already exists — safe to ignore */ }

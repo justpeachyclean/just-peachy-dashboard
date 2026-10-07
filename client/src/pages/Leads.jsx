@@ -663,13 +663,6 @@ export default function Leads() {
   const visible = leads.filter(r => {
     if (filter.converted === 'yes' && !r.converted) return false
     if (filter.converted === 'no' && r.converted) return false
-    // Hide unworked web-form/GHL leads (no price, no frequency, not converted) unless toggled on
-    // MaidCentral leads are always visible — they represent real bookings that just need to be worked
-    if (!showWebForm && r.source !== 'maidcentral') {
-      const hasPrice = r.price_per_clean != null || r.quote_amount != null || r.initial_clean_price != null
-      const hasFreq  = r.frequency && r.frequency.trim()
-      if (!hasPrice && !hasFreq && !r.converted) return false
-    }
     if (search.trim()) {
       const q = search.trim().toLowerCase()
       return (r.client_name || '').toLowerCase().includes(q) ||

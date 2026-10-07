@@ -201,6 +201,28 @@ const migrations = [
     created_at          TEXT DEFAULT (datetime('now')),
     updated_at          TEXT DEFAULT (datetime('now'))
   )`,
+  // Dedup tracking: mark merged-away records so they stay in DB but don't count
+  `ALTER TABLE lead_records ADD COLUMN merged_into INTEGER`,
+  `ALTER TABLE lead_records ADD COLUMN is_merged INTEGER DEFAULT 0`,
+  `ALTER TABLE lead_records ADD COLUMN merge_date TEXT`,
+  // Tag for classifying unworked web-form submissions vs real leads
+  `ALTER TABLE lead_records ADD COLUMN lead_type TEXT`,
+  // Table for flagging possible duplicates for manual review
+  `CREATE TABLE IF NOT EXISTS lead_dedup_flags (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    lead_a_id    INTEGER,
+    lead_b_id    INTEGER,
+    lead_a_name  TEXT,
+    lead_b_name  TEXT,
+    lead_a_date  TEXT,
+    lead_b_date  TEXT,
+    match_reason TEXT,
+    status       TEXT DEFAULT 'pending',
+    reviewed_by  TEXT,
+    reviewed_at  TEXT,
+    notes        TEXT,
+    created_at   TEXT DEFAULT (datetime('now'))
+  )`,
 ]
 for (const sql of migrations) {
   try { db.exec(sql) } catch (_) { /* column already exists — safe to ignore */ }
@@ -229,6 +251,19 @@ try {
 try {
   db.exec(`UPDATE lead_records SET rep_name = 'Lexi Ledom' WHERE rep_name IS NULL OR TRIM(rep_name) = ''`)
 } catch (_) {}
+
+// Normalize record_date: GHL webhooks can send full ISO timestamps ("2026-08-14T19:55:07.245Z")
+// which causes two sorted groups when mixing with date-only records from manual/import.
+// Strip the time component down to YYYY-MM-DD on every startup (idempotent).
+try {
+  const fixed = db.prepare(`UPDATE lead_records SET record_date = SUBSTR(record_date, 1, 10) WHERE LENGTH(record_date) > 10`).run()
+  if (fixed.changes > 0) console.log(`✅ Normalized ${fixed.changes} record_date timestamps to YYYY-MM-DD`)
+} catch(e) { console.warn('record_date normalize skipped:', e.message) }
+
+// Fix month column to match the now-normalized record_date
+try {
+  db.prepare(`UPDATE lead_records SET month = SUBSTR(record_date, 1, 7) WHERE LENGTH(record_date) >= 7 AND month != SUBSTR(record_date, 1, 7)`).run()
+} catch(e) {}
 
 // One-time: delete duplicate ghl lead records created by multi-event GHL contacts
 // (new_lead + opportunity_won each created a separate row before the dedup fix)

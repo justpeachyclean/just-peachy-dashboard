@@ -47,7 +47,8 @@ router.post('/ghl', (req, res) => {
 
   if (!event_type) return res.status(400).json({ error: 'event_type required' })
 
-  const eDate = event_date ?? new Date().toISOString().split('T')[0]
+  // Strip any ISO time component from event_date so it stores as YYYY-MM-DD only
+  const eDate = event_date ? String(event_date).slice(0, 10) : new Date().toISOString().split('T')[0]
 
   db.prepare(`
     INSERT INTO ghl_events (event_type, contact_id, opportunity_id, rep_name, client_freq, event_date, raw_payload)
@@ -881,6 +882,14 @@ router.post('/qb-expense', (req, res) => {
     .run(`QB marketing: ${cat} ${isoDate} $${rawAmount} — monthly total now $${Math.round(total * 100) / 100}`)
 
   res.json({ ok: true, month, category: cat, transaction_amount: rawAmount, monthly_total: Math.round(total * 100) / 100 })
+})
+
+// GET /api/webhook/leads-backup — full export of lead_records (webhook-secret protected)
+// Used to snapshot the database before running bulk data operations.
+router.get('/leads-backup', (req, res) => {
+  if (!verifySecret(req, res)) return
+  const rows = db.prepare('SELECT * FROM lead_records ORDER BY id').all()
+  res.json({ count: rows.length, exported_at: new Date().toISOString(), rows })
 })
 
 module.exports = router

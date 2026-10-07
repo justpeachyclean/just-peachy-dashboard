@@ -503,6 +503,10 @@ export default function Leads() {
   const [dupMatches, setDupMatches] = useState([])
   const [sortCol, setSortCol] = useState('record_date')
   const [sortDir, setSortDir] = useState('desc')
+  const [showDedup, setShowDedup] = useState(false)
+  const [dedupData, setDedupData] = useState(null)
+  const [dedupLoading, setDedupLoading] = useState(false)
+  const [showWebForm, setShowWebForm] = useState(false)
 
   // Check for duplicate client name when adding (not editing)
   useEffect(() => {
@@ -542,6 +546,35 @@ export default function Leads() {
   }
 
   useEffect(() => { load() }, [filter.year, filter.month, search, rangeMode, dateStart, dateEnd])
+
+  const loadDedup = () => {
+    setDedupLoading(true)
+    const qp = filter.month ? `month=${filter.year}-${filter.month}` : `year=${filter.year}`
+    apiFetch(`/api/leads/dedup/scan?${qp}`)
+      .then(r => r.json())
+      .then(data => { setDedupData(data); setDedupLoading(false) })
+      .catch(() => setDedupLoading(false))
+  }
+
+  const mergeDup = async (keepId, mergeId) => {
+    if (!confirm(`Merge the two records? The earlier date and best data will be kept. This cannot be undone through the UI.`)) return
+    await apiFetch('/api/leads/dedup/merge', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ keep_id: keepId, merge_id: mergeId }),
+    })
+    loadDedup()
+    load()
+  }
+
+  const flagForReview = async (aId, bId, reason) => {
+    await apiFetch('/api/leads/dedup/flag', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ lead_a_id: aId, lead_b_id: bId, match_reason: reason || 'manual' }),
+    })
+    loadDedup()
+  }
 
   useEffect(() => {
     apiFetch('/api/bonus/reps').then(r => r.json()).then(rows => {
@@ -626,10 +659,16 @@ export default function Leads() {
     load()
   }
 
-  // Apply filters: converted + search
+  // Apply filters: converted + web form + search
   const visible = leads.filter(r => {
     if (filter.converted === 'yes' && !r.converted) return false
     if (filter.converted === 'no' && r.converted) return false
+    // Hide unworked web-form leads (no price, no frequency, not converted) unless toggled on
+    if (!showWebForm) {
+      const hasPrice = r.price_per_clean != null || r.quote_amount != null || r.initial_clean_price != null
+      const hasFreq  = r.frequency && r.frequency.trim()
+      if (!hasPrice && !hasFreq && !r.converted) return false
+    }
     if (search.trim()) {
       const q = search.trim().toLowerCase()
       return (r.client_name || '').toLowerCase().includes(q) ||
@@ -646,14 +685,17 @@ export default function Leads() {
 
   const sorted = [...visible].sort((a, b) => {
     const mul = sortDir === 'asc' ? 1 : -1
-    const av = a[sortCol], bv = b[sortCol]
-    if (av == null && bv == null) return 0
-    if (av == null) return mul
-    if (bv == null) return -mul
-    if (typeof av === 'number' || typeof bv === 'number') {
-      return ((Number(av) || 0) - (Number(bv) || 0)) * mul
-    }
-    return String(av).localeCompare(String(bv)) * mul
+    let av = a[sortCol], bv = b[sortCol]
+    const aEmpty = av == null || av === ''
+    const bEmpty = bv == null || bv === ''
+    if (aEmpty && bEmpty) return 0
+    if (aEmpty) return mul      // empty values sort to end in asc
+    if (bEmpty) return -mul
+    if (typeof av === 'number' && typeof bv === 'number') return (av - bv) * mul
+    // For date columns compare only YYYY-MM-DD so any stray ISO timestamps don't scatter
+    if (sortCol === 'record_date') { av = String(av).slice(0, 10); bv = String(bv).slice(0, 10) }
+    // Case-insensitive, accent-insensitive, trim whitespace
+    return String(av).trim().localeCompare(String(bv).trim(), undefined, { sensitivity: 'base', numeric: true }) * mul
   })
 
   const converted      = leads.filter(r => r.converted)
@@ -696,11 +738,86 @@ export default function Leads() {
           <button onClick={() => setShowImport(true)} className="btn-secondary text-sm">
             ↑ Import CSV
           </button>
+          <button
+            onClick={() => { setShowDedup(d => !d); if (!dedupData) loadDedup() }}
+            className="btn-secondary text-sm"
+          >
+            {showDedup ? 'Hide Duplicates' : 'Review Duplicates'}
+          </button>
           <button onClick={() => { setEditId(null); setForm(BLANK_FORM); setShowForm(true) }} className="btn-primary text-sm">
             + Add Lead
           </button>
         </div>
       </div>
+
+      {/* Duplicate Review Panel */}
+      {showDedup && (
+        <div className="mb-6 rounded-xl border border-amber-200 bg-amber-50 p-4">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="font-semibold text-amber-800 text-sm">
+              Duplicate Review — {filter.month ? `${MONTH_NAMES[parseInt(filter.month)-1]} ${filter.year}` : filter.year}
+            </h2>
+            <button onClick={loadDedup} className="text-xs text-amber-600 underline">Refresh</button>
+          </div>
+          {dedupLoading && <p className="text-sm text-amber-700">Scanning…</p>}
+          {dedupData && !dedupLoading && (
+            <>
+              {dedupData.exact_dupes.length === 0 ? (
+                <p className="text-sm text-green-700 font-medium">No exact-name duplicate pairs found.</p>
+              ) : (
+                <div className="space-y-3">
+                  <p className="text-sm text-amber-700 font-medium">
+                    {dedupData.exact_dupes.length} duplicate pair{dedupData.exact_dupes.length !== 1 ? 's' : ''} — same name within 30 days:
+                  </p>
+                  {dedupData.exact_dupes.map((d, i) => (
+                    <div key={i} className="bg-white rounded-lg border border-amber-200 p-3">
+                      <div className="grid grid-cols-2 gap-3 text-xs mb-2">
+                        <div>
+                          <p className="font-semibold text-ink">A — {d.a_name}</p>
+                          <p className="text-gray-500">{d.a_date} · {d.a_source} · {d.a_freq || 'no freq'} · {d.a_quote != null ? `$${d.a_quote}` : 'no quote'}</p>
+                          <p className="text-gray-400">ID {d.a_id} · conv: {d.a_converted ? 'Y' : 'N'} · recur: {d.a_recurring ? 'Y' : 'N'}</p>
+                        </div>
+                        <div>
+                          <p className="font-semibold text-ink">B — {d.b_name}</p>
+                          <p className="text-gray-500">{d.b_date} · {d.b_source} · {d.b_freq || 'no freq'} · {d.b_quote != null ? `$${d.b_quote}` : 'no quote'}</p>
+                          <p className="text-gray-400">ID {d.b_id} · conv: {d.b_converted ? 'Y' : 'N'} · recur: {d.b_recurring ? 'Y' : 'N'}</p>
+                        </div>
+                      </div>
+                      <div className="flex gap-2 flex-wrap items-center">
+                        <button onClick={() => mergeDup(d.a_id, d.b_id)} className="text-xs px-2.5 py-1 bg-brand text-white rounded-md hover:bg-brand/90">Keep A · merge B away</button>
+                        <button onClick={() => mergeDup(d.b_id, d.a_id)} className="text-xs px-2.5 py-1 bg-brand text-white rounded-md hover:bg-brand/90">Keep B · merge A away</button>
+                        <button onClick={() => flagForReview(d.a_id, d.b_id, 'possible_dup')} className="text-xs px-2.5 py-1 bg-amber-100 text-amber-800 border border-amber-300 rounded-md hover:bg-amber-200">Flag for review</button>
+                        <span className="text-xs text-gray-400">(earliest date kept automatically)</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {dedupData.web_form_leads?.length > 0 && (
+                <div className="mt-4 pt-3 border-t border-amber-200">
+                  <p className="text-sm text-amber-700">
+                    <span className="font-medium">{dedupData.web_form_leads.length} unworked leads</span> with no price, no service type, and not converted
+                    {showWebForm ? ' — visible in Client Log below.' : ' — hidden from Client Log.'}
+                  </p>
+                  <button
+                    onClick={() => setShowWebForm(v => !v)}
+                    className="mt-1 text-xs text-amber-700 underline"
+                  >
+                    {showWebForm ? 'Hide them from the table' : 'Show them in the table'}
+                  </button>
+                  {showWebForm && (
+                    <div className="mt-2 max-h-40 overflow-y-auto space-y-1">
+                      {dedupData.web_form_leads.map(r => (
+                        <p key={r.id} className="text-xs text-gray-600">{r.record_date} — {r.client_name || '(no name)'} · {r.source} · ID {r.id}</p>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      )}
 
       {/* KPI Summary row */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4">

@@ -58,6 +58,18 @@ if (process.env.NODE_ENV === 'production') {
 
 app.listen(PORT, () => {
   console.log(`🍑 Just Peachy server running on http://localhost:${PORT}`)
-  // catch up any recleans that were logged before reclean→Barometer forwarding existed (idempotent)
-  try { require('./lib/forward').backfillRecleans() } catch (_) {}
+  try {
+    const db = require('./db')
+    // ONE-TIME: after the Employee-dashboard matcher learned abbreviated names ("Suzzane C."),
+    // clear the forwarded flag so every reclean re-forwards once — the ones that silently failed
+    // to match before now land. The Employee side dedups (tech+date+client), so nothing doubles.
+    const done = db.prepare("SELECT value FROM settings WHERE key='recleans_resync_matchfix'").get()
+    if (!done) {
+      db.prepare('UPDATE recleans SET forwarded_at=NULL').run()
+      db.prepare("INSERT OR REPLACE INTO settings (key,value) VALUES ('recleans_resync_matchfix','1')").run()
+      console.log('↻ reset reclean forward flags for a one-time re-sync')
+    }
+    // catch up any un-forwarded recleans (idempotent; runs every boot)
+    require('./lib/forward').backfillRecleans()
+  } catch (_) {}
 })

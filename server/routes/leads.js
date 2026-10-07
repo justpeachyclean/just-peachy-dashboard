@@ -131,12 +131,15 @@ router.get('/', (req, res) => {
 
   let sql = 'SELECT * FROM lead_records'
   const params = []
+  const notMerged = '(is_merged IS NULL OR is_merged = 0)'
   if (startDate && endDate) {
-    sql += ' WHERE record_date BETWEEN ? AND ?'; params.push(startDate, endDate)
+    sql += ` WHERE record_date BETWEEN ? AND ? AND ${notMerged}`; params.push(startDate, endDate)
   } else if (month) {
-    sql += ' WHERE month = ?'; params.push(month)
+    sql += ` WHERE month = ? AND ${notMerged}`; params.push(month)
   } else if (year) {
-    sql += ' WHERE month LIKE ?'; params.push(`${year}-%`)
+    sql += ` WHERE month LIKE ? AND ${notMerged}`; params.push(`${year}-%`)
+  } else {
+    sql += ` WHERE ${notMerged}`
   }
   sql += ` ORDER BY record_date DESC, id DESC LIMIT ?`
   params.push(Math.min(parseInt(limit), 2000))
@@ -169,6 +172,159 @@ router.get('/check', (req, res) => {
   `).all(name.trim())
   res.json(rows)
 })
+
+// ── Dedup endpoints ─────────────────────────────────────────────────────────
+
+// GET /api/leads/dedup/scan?year=2026 — find exact-name duplicate pairs + unworked web form leads
+router.get('/dedup/scan', (req, res) => {
+  const { month, year } = req.query
+  const baseWhere = 'a.is_merged = 0 AND b.is_merged = 0'
+  let dateWhere = ''
+  const params = []
+  if (month) {
+    dateWhere = ' AND (a.month = ? OR b.month = ?)'
+    params.push(month, month)
+  } else if (year) {
+    dateWhere = ' AND (a.month LIKE ? OR b.month LIKE ?)'
+    params.push(`${year}-%`, `${year}-%`)
+  }
+
+  const exactDupes = db.prepare(`
+    SELECT
+      a.id AS a_id, a.client_name AS a_name, a.record_date AS a_date, a.month AS a_month,
+      a.converted AS a_converted, a.recurring_retained AS a_recurring,
+      a.quote_amount AS a_quote, a.frequency AS a_freq, a.source AS a_source,
+      b.id AS b_id, b.client_name AS b_name, b.record_date AS b_date, b.month AS b_month,
+      b.converted AS b_converted, b.recurring_retained AS b_recurring,
+      b.quote_amount AS b_quote, b.frequency AS b_freq, b.source AS b_source
+    FROM lead_records a
+    JOIN lead_records b ON a.id < b.id
+    WHERE ${baseWhere}${dateWhere}
+      AND a.client_name IS NOT NULL AND b.client_name IS NOT NULL
+      AND LENGTH(TRIM(a.client_name)) > 0
+      AND LOWER(TRIM(a.client_name)) = LOWER(TRIM(b.client_name))
+      AND ABS(JULIANDAY(SUBSTR(a.record_date,1,10)) - JULIANDAY(SUBSTR(b.record_date,1,10))) <= 30
+    ORDER BY a.record_date DESC
+  `).all(...params)
+
+  let webWhere = 'is_merged = 0 AND converted = 0'
+  const webParams = []
+  if (month) { webWhere += ' AND month = ?'; webParams.push(month) }
+  else if (year) { webWhere += ' AND month LIKE ?'; webParams.push(`${year}-%`) }
+
+  const webFormLeads = db.prepare(`
+    SELECT id, client_name, record_date, month, source, lead_type, notes
+    FROM lead_records
+    WHERE ${webWhere}
+      AND (price_per_clean IS NULL OR price_per_clean = 0)
+      AND (quote_amount IS NULL OR quote_amount = 0)
+      AND (initial_clean_price IS NULL OR initial_clean_price = 0)
+      AND (frequency IS NULL OR TRIM(frequency) = '')
+    ORDER BY record_date DESC
+    LIMIT 200
+  `).all(...webParams)
+
+  res.json({ exact_dupes: exactDupes, web_form_leads: webFormLeads })
+})
+
+// GET /api/leads/dedup/flags — list all dedup flags
+router.get('/dedup/flags', (req, res) => {
+  const rows = db.prepare(`
+    SELECT f.*,
+      a.client_name AS a_current_name, a.is_merged AS a_merged,
+      b.client_name AS b_current_name, b.is_merged AS b_merged
+    FROM lead_dedup_flags f
+    LEFT JOIN lead_records a ON a.id = f.lead_a_id
+    LEFT JOIN lead_records b ON b.id = f.lead_b_id
+    ORDER BY f.created_at DESC
+    LIMIT 200
+  `).all()
+  res.json(rows)
+})
+
+// POST /api/leads/dedup/merge — merge two lead records (keep one, mark other as merged)
+router.post('/dedup/merge', (req, res) => {
+  const { keep_id, merge_id, notes } = req.body
+  if (!keep_id || !merge_id) return res.status(400).json({ error: 'keep_id and merge_id required' })
+  if (keep_id === merge_id) return res.status(400).json({ error: 'keep_id and merge_id must differ' })
+
+  const keeper = db.prepare('SELECT * FROM lead_records WHERE id = ? AND (is_merged IS NULL OR is_merged = 0)').get(keep_id)
+  const loser  = db.prepare('SELECT * FROM lead_records WHERE id = ? AND (is_merged IS NULL OR is_merged = 0)').get(merge_id)
+  if (!keeper) return res.status(404).json({ error: `Record ${keep_id} not found or already merged` })
+  if (!loser)  return res.status(404).json({ error: `Record ${merge_id} not found or already merged` })
+
+  db.transaction(() => {
+    // Keep the earlier date as the lead date
+    const keepDate = (keeper.record_date || '').slice(0, 10)
+    const loseDate = (loser.record_date  || '').slice(0, 10)
+    if (loseDate && keepDate && loseDate < keepDate) {
+      db.prepare('UPDATE lead_records SET record_date=?, month=? WHERE id=?')
+        .run(loseDate, loseDate.slice(0, 7), keep_id)
+    }
+
+    // Merge scalar fields: non-null from loser fills null on keeper
+    for (const field of ['frequency','price_per_clean','quote_amount','initial_clean_price',
+                         'lead_source','used_before','reason','rep_name',
+                         'converted_date','recurring_converted_date']) {
+      if (keeper[field] == null && loser[field] != null) {
+        db.prepare(`UPDATE lead_records SET ${field}=? WHERE id=?`).run(loser[field], keep_id)
+      }
+    }
+    // Boolean fields: Y wins
+    for (const field of ['converted','initial_clean_booked','recurring_retained']) {
+      if (!keeper[field] && loser[field]) {
+        db.prepare(`UPDATE lead_records SET ${field}=1 WHERE id=?`).run(keep_id)
+      }
+    }
+    // Notes: keep the longer one
+    if (loser.notes && (!keeper.notes || keeper.notes.length < loser.notes.length)) {
+      db.prepare('UPDATE lead_records SET notes=? WHERE id=?').run(loser.notes, keep_id)
+    }
+
+    // Mark loser as merged
+    const mergeNote = notes ? ` [Merged: ${notes}]` : ''
+    db.prepare(`UPDATE lead_records SET is_merged=1, merged_into=?, merge_date=date('now'), notes=COALESCE(notes,'')||? WHERE id=?`)
+      .run(keep_id, mergeNote, merge_id)
+
+    // Resolve any pending dedup flags involving these two records
+    db.prepare(`UPDATE lead_dedup_flags SET status='merged', reviewed_at=datetime('now') WHERE status='pending' AND (lead_a_id IN (?,?) OR lead_b_id IN (?,?))`)
+      .run(keep_id, merge_id, keep_id, merge_id)
+  })()
+
+  const { calcBonusForMonths } = require('../lib/calcBonus')
+  const refreshed = db.prepare('SELECT * FROM lead_records WHERE id=?').get(keep_id)
+  if (refreshed) calcBonusForMonths([refreshed.month].filter(Boolean))
+
+  audit(req, 'leads_merged', `Merged "${loser.client_name}" (ID ${merge_id}) into "${keeper.client_name}" (ID ${keep_id})`)
+  res.json({ ok: true, kept: keep_id, merged: merge_id, client: keeper.client_name })
+})
+
+// POST /api/leads/dedup/flag — manually create a flag for a pair needing human review
+router.post('/dedup/flag', (req, res) => {
+  const { lead_a_id, lead_b_id, match_reason, notes } = req.body
+  if (!lead_a_id || !lead_b_id) return res.status(400).json({ error: 'lead_a_id and lead_b_id required' })
+  const a = db.prepare('SELECT id, client_name, record_date FROM lead_records WHERE id=?').get(lead_a_id)
+  const b = db.prepare('SELECT id, client_name, record_date FROM lead_records WHERE id=?').get(lead_b_id)
+  if (!a || !b) return res.status(404).json({ error: 'One or both records not found' })
+  const result = db.prepare(`
+    INSERT INTO lead_dedup_flags (lead_a_id, lead_b_id, lead_a_name, lead_b_name, lead_a_date, lead_b_date, match_reason, notes)
+    VALUES (?,?,?,?,?,?,?,?)
+  `).run(lead_a_id, lead_b_id, a.client_name, b.client_name, a.record_date, b.record_date, match_reason ?? 'manual', notes ?? null)
+  audit(req, 'dedup_flag_created', `Flagged "${a.client_name}" (ID ${lead_a_id}) vs "${b.client_name}" (ID ${lead_b_id}) for review`)
+  res.json({ ok: true, id: result.lastInsertRowid })
+})
+
+// PATCH /api/leads/dedup/flags/:id — update a flag status (must be before PATCH /:id)
+router.patch('/dedup/flags/:id', (req, res) => {
+  const { status, notes } = req.body
+  if (!['pending','dismissed','merged'].includes(status))
+    return res.status(400).json({ error: 'status must be pending, dismissed, or merged' })
+  db.prepare(`UPDATE lead_dedup_flags SET status=?, notes=COALESCE(?,notes), reviewed_at=datetime('now') WHERE id=?`)
+    .run(status, notes ?? null, req.params.id)
+  res.json({ ok: true })
+})
+
+// ── End dedup endpoints ──────────────────────────────────────────────────────
 
 // POST /api/leads/bulk — import multiple leads at once (manual catch-up when Zapier is down)
 router.post('/bulk', (req, res) => {

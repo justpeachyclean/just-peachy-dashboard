@@ -24,14 +24,17 @@ function send(type, rec) {
   post(base.replace(/\/+$/, '') + '/api/inbound/incident', { 'Content-Type': 'application/json', 'X-API-Key': key }, body).catch(() => {})
 }
 
-// forward a record ONCE (idempotent via a forwarded_at column); skips if no tech attribution
+// forward a record ONCE (idempotent via a forwarded_at column); skips if no tech attribution.
+// rec.tech may be a comma-separated list of techs (e.g. a reclean done by a team) — forward one
+// event PER tech so each of them takes the hit on their Barometer.
 function maybeForward(table, id, type, rec) {
   try {
-    if (!rec.tech) return
+    const techs = String(rec.tech || '').split(',').map(s => s.trim()).filter(Boolean)
+    if (!techs.length) return
     const row = db.prepare(`SELECT forwarded_at FROM ${table} WHERE id=?`).get(id)
     if (!row || row.forwarded_at) return
     db.prepare(`UPDATE ${table} SET forwarded_at=datetime('now') WHERE id=?`).run(id)
-    send(type, rec)
+    for (const tech of techs) send(type, { ...rec, tech })
   } catch (_) {}
 }
 
@@ -53,4 +56,23 @@ function backfillFeedback() {
   } catch (e) { console.warn('feedback backfill skipped:', e.message) }
 }
 
-module.exports = { send, maybeForward, backfillFeedback }
+// One-time catch-up for recleans logged BEFORE forwarding was wired (forwarded_at IS NULL).
+// Multi-tech aware (comma-split → one event per tech). Idempotent, so it's a no-op on later boots.
+// Recleans are low-volume, so no date bound is needed, but cap it defensively.
+function backfillRecleans() {
+  try {
+    if (!process.env.EMP_DASH_URL || !process.env.EMP_DASH_INBOUND_KEY) return
+    const rows = db.prepare(`SELECT id, reclean_date, client_name, tech_name, reason FROM recleans
+      WHERE forwarded_at IS NULL AND tech_name IS NOT NULL AND tech_name != '' LIMIT 500`).all()
+    let sent = 0
+    for (const r of rows) {
+      const techs = String(r.tech_name).split(',').map(s => s.trim()).filter(Boolean)
+      if (!techs.length) continue
+      db.prepare("UPDATE recleans SET forwarded_at=datetime('now') WHERE id=?").run(r.id)
+      for (const tech of techs) { send('reclean', { tech, date: r.reclean_date, client: r.client_name, note: r.reason }); sent++ }
+    }
+    if (sent) console.log(`↪️  backfilled ${sent} reclean attribution(s) from ${rows.length} record(s) to the Employee dashboard`)
+  } catch (e) { console.warn('reclean backfill skipped:', e.message) }
+}
+
+module.exports = { send, maybeForward, backfillFeedback, backfillRecleans }

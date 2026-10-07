@@ -265,6 +265,23 @@ try {
   db.prepare(`UPDATE lead_records SET month = SUBSTR(record_date, 1, 7) WHERE LENGTH(record_date) >= 7 AND month != SUBSTR(record_date, 1, 7)`).run()
 } catch(e) {}
 
+// Clean up MaidCentral client names: remove leading/trailing spaces and collapse internal runs
+// MC exports names like "  Kimby   Henderson" — normalize to "Kimby Henderson"
+// Only run once (idempotent: TRIM+REPLACE is safe to apply multiple times)
+try {
+  const alreadyDone = db.prepare("SELECT value FROM settings WHERE key='mc_name_normalize_v1'").get()
+  if (!alreadyDone) {
+    const normalized = db.prepare(`
+      UPDATE lead_records
+      SET client_name = TRIM(REPLACE(REPLACE(REPLACE(TRIM(client_name), '    ', ' '), '   ', ' '), '  ', ' '))
+      WHERE source = 'maidcentral'
+        AND client_name != TRIM(REPLACE(REPLACE(REPLACE(TRIM(client_name), '    ', ' '), '   ', ' '), '  ', ' '))
+    `).run()
+    db.prepare("INSERT INTO settings (key, value) VALUES ('mc_name_normalize_v1', '1')").run()
+    if (normalized.changes > 0) console.log(`✅ Normalized ${normalized.changes} MC client names (removed extra spaces)`)
+  }
+} catch(e) { console.warn('MC name normalize skipped:', e.message) }
+
 // One-time: delete duplicate ghl lead records created by multi-event GHL contacts
 // (new_lead + opportunity_won each created a separate row before the dedup fix)
 try {

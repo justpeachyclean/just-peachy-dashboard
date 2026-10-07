@@ -189,6 +189,11 @@ router.get('/dedup/scan', (req, res) => {
     params.push(`${year}-%`, `${year}-%`)
   }
 
+  // Normalize names: trim outer spaces, collapse internal runs of spaces, lowercase
+  // This catches MC records like "  Kimby   Henderson" matching GHL "Kimby Henderson"
+  const normExpr = (col) =>
+    `REPLACE(REPLACE(REPLACE(TRIM(LOWER(${col})), '    ', ' '), '   ', ' '), '  ', ' ')`
+
   const exactDupes = db.prepare(`
     SELECT
       a.id AS a_id, a.client_name AS a_name, a.record_date AS a_date, a.month AS a_month,
@@ -202,7 +207,7 @@ router.get('/dedup/scan', (req, res) => {
     WHERE ${baseWhere}${dateWhere}
       AND a.client_name IS NOT NULL AND b.client_name IS NOT NULL
       AND LENGTH(TRIM(a.client_name)) > 0
-      AND LOWER(TRIM(a.client_name)) = LOWER(TRIM(b.client_name))
+      AND ${normExpr('a.client_name')} = ${normExpr('b.client_name')}
       AND ABS(JULIANDAY(SUBSTR(a.record_date,1,10)) - JULIANDAY(SUBSTR(b.record_date,1,10))) <= 30
     ORDER BY a.record_date DESC
   `).all(...params)

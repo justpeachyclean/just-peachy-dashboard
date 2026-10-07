@@ -892,4 +892,95 @@ router.get('/leads-backup', (req, res) => {
   res.json({ count: rows.length, exported_at: new Date().toISOString(), rows })
 })
 
+// POST /api/webhook/bulk-merge — execute a list of merge pairs (webhook-secret protected)
+// Body: { pairs: [{keep_id, merge_id, notes?}, ...], flags: [{lead_a_id, lead_b_id, reason?}, ...] }
+router.post('/bulk-merge', (req, res) => {
+  if (!verifySecret(req, res)) return
+  const { pairs = [], flags = [] } = req.body
+  const results = []
+  const flagResults = []
+
+  const getRecord = (id) => db.prepare('SELECT * FROM lead_records WHERE id = ? AND (is_merged IS NULL OR is_merged = 0)').get(id)
+  const { calcBonusForMonths } = require('../lib/calcBonus')
+
+  for (const { keep_id, merge_id, notes } of pairs) {
+    if (!keep_id || !merge_id || keep_id === merge_id) {
+      results.push({ keep_id, merge_id, ok: false, error: 'invalid pair' })
+      continue
+    }
+    const keeper = getRecord(keep_id)
+    const loser  = getRecord(merge_id)
+    if (!keeper) { results.push({ keep_id, merge_id, ok: false, error: `record ${keep_id} not found or already merged` }); continue }
+    if (!loser)  { results.push({ keep_id, merge_id, ok: false, error: `record ${merge_id} not found or already merged` }); continue }
+
+    try {
+      db.transaction(() => {
+        const keepDate = (keeper.record_date || '').slice(0, 10)
+        const loseDate = (loser.record_date  || '').slice(0, 10)
+        if (loseDate && keepDate && loseDate < keepDate) {
+          db.prepare('UPDATE lead_records SET record_date=?, month=? WHERE id=?')
+            .run(loseDate, loseDate.slice(0, 7), keep_id)
+        }
+        for (const field of ['frequency','price_per_clean','quote_amount','initial_clean_price',
+                             'lead_source','used_before','reason','rep_name','converted_date','recurring_converted_date']) {
+          if (keeper[field] == null && loser[field] != null) {
+            db.prepare(`UPDATE lead_records SET ${field}=? WHERE id=?`).run(loser[field], keep_id)
+          }
+        }
+        for (const field of ['converted','initial_clean_booked','recurring_retained']) {
+          if (!keeper[field] && loser[field]) db.prepare(`UPDATE lead_records SET ${field}=1 WHERE id=?`).run(keep_id)
+        }
+        if (loser.notes && (!keeper.notes || keeper.notes.length < loser.notes.length)) {
+          db.prepare('UPDATE lead_records SET notes=? WHERE id=?').run(loser.notes, keep_id)
+        }
+        const mergeNote = notes ? ` [Merged: ${notes}]` : ''
+        db.prepare(`UPDATE lead_records SET is_merged=1, merged_into=?, merge_date=date('now'), notes=COALESCE(notes,'')||? WHERE id=?`)
+          .run(keep_id, mergeNote, merge_id)
+        db.prepare(`UPDATE lead_dedup_flags SET status='merged', reviewed_at=datetime('now') WHERE status='pending' AND (lead_a_id IN (?,?) OR lead_b_id IN (?,?))`)
+          .run(keep_id, merge_id, keep_id, merge_id)
+      })()
+      const refreshed = db.prepare('SELECT month FROM lead_records WHERE id=?').get(keep_id)
+      if (refreshed) calcBonusForMonths([refreshed.month].filter(Boolean))
+      results.push({ keep_id, merge_id, ok: true, client: keeper.client_name })
+    } catch (e) {
+      results.push({ keep_id, merge_id, ok: false, error: e.message })
+    }
+  }
+
+  for (const { lead_a_id, lead_b_id, reason } of flags) {
+    try {
+      const a = db.prepare('SELECT id, client_name, record_date FROM lead_records WHERE id=?').get(lead_a_id)
+      const b = db.prepare('SELECT id, client_name, record_date FROM lead_records WHERE id=?').get(lead_b_id)
+      if (!a || !b) { flagResults.push({ lead_a_id, lead_b_id, ok: false, error: 'record not found' }); continue }
+      const result = db.prepare(`INSERT INTO lead_dedup_flags (lead_a_id,lead_b_id,lead_a_name,lead_b_name,lead_a_date,lead_b_date,match_reason) VALUES (?,?,?,?,?,?,?)`)
+        .run(lead_a_id, lead_b_id, a.client_name, b.client_name, a.record_date, b.record_date, reason || 'manual')
+      flagResults.push({ lead_a_id, lead_b_id, ok: true, id: result.lastInsertRowid })
+    } catch (e) {
+      flagResults.push({ lead_a_id, lead_b_id, ok: false, error: e.message })
+    }
+  }
+
+  const merged = results.filter(r => r.ok).length
+  const failed = results.filter(r => !r.ok).length
+  db.prepare(`INSERT INTO audit_log (action_type, description, user) VALUES ('bulk_merge', ?, 'webhook')`)
+    .run(`Bulk merge: ${merged} merged, ${failed} failed, ${flagResults.length} flagged`)
+  res.json({ merged, failed, flagged: flagResults.filter(r => r.ok).length, results, flagResults })
+})
+
+// POST /api/webhook/reset-password — set a user's password (webhook-secret protected)
+// Body: { username, new_password }
+router.post('/reset-password', (req, res) => {
+  if (!verifySecret(req, res)) return
+  const { username, new_password } = req.body
+  if (!username || !new_password) return res.status(400).json({ error: 'username and new_password required' })
+  const { randomBytes, scryptSync } = require('crypto')
+  const salt = randomBytes(16).toString('hex')
+  const hash = scryptSync(new_password, salt, 64).toString('hex')
+  const result = db.prepare('UPDATE users SET password_hash=? WHERE username=? COLLATE NOCASE').run(`${salt}:${hash}`, username)
+  if (result.changes === 0) return res.status(404).json({ error: `User "${username}" not found` })
+  db.prepare(`INSERT INTO audit_log (action_type, description, user) VALUES ('password_reset', ?, 'webhook')`)
+    .run(`Password reset for user: ${username}`)
+  res.json({ ok: true, username })
+})
+
 module.exports = router

@@ -14,6 +14,9 @@ const FREQ_LABELS = {
   'one-time':       'One-Time',
   priority:         'Priority',
   'move out':       'Move Out',
+  'move in':        'Move In',
+  pcc:              'PCC',
+  commercial:       'Commercial',
   ttb:              'TTB',
   general:          'General',
 }
@@ -29,10 +32,13 @@ const FREQ_COLORS = {
   'one-time':       'bg-gray-100 text-gray-500',
   priority:         'bg-rose-50 text-rose-600',
   'move out':       'bg-orange-50 text-orange-600',
+  'move in':        'bg-teal-50 text-teal-700',
+  pcc:              'bg-purple-50 text-purple-700',
+  commercial:       'bg-indigo-50 text-indigo-700',
   ttb:              'bg-blue-50 text-blue-600',
   general:          'bg-gray-100 text-gray-500',
 }
-const FREQUENCIES = ['weekly', 'biweekly', 'monthly', 'tri-weekly', 'every 4 weeks', 'one_time', 'priority', 'move out', 'ttb', 'general']
+const FREQUENCIES = ['weekly', 'biweekly', 'monthly', 'tri-weekly', 'every 4 weeks', 'one_time', 'priority', 'move out', 'move in', 'pcc', 'commercial', 'ttb', 'general']
 const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 const fmt$ = n => n != null ? `$${Number(n).toLocaleString(undefined, { maximumFractionDigits: 0 })}` : '—'
 const pct = n => n != null ? `${(n * 100).toFixed(1)}%` : '—'
@@ -76,7 +82,7 @@ function exportCsv(filename, rows) {
 const VISITS = { weekly: 52, biweekly: 26, 'bi-weekly': 26, monthly: 13, 'every 4 weeks': 13, one_time: 1, 'one time': 1, 'one-time': 1, 'tri-weekly': 17, priority: 1, 'move out': 1, ttb: 1, general: 1 }
 // Recurring visits after the initial clean (total − 1)
 const RECURRING_VISITS = { weekly: 51, biweekly: 25, 'bi-weekly': 25, monthly: 12, 'every 4 weeks': 12, 'tri-weekly': 16 }
-const ONE_TIME_FREQS = ['one_time', 'one time', 'one-time', 'priority', 'move out', 'ttb', 'general']
+const ONE_TIME_FREQS = ['one_time', 'one time', 'one-time', 'priority', 'move out', 'move in', 'pcc', 'ttb', 'general']
 
 // Two-tier annual value: initial clean price + recurring price × remaining visits
 function calcAnnual(initialPrice, recurringPrice, frequency) {

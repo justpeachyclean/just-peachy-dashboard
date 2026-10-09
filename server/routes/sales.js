@@ -43,7 +43,7 @@ router.get('/', (req, res) => {
         COUNT(CASE WHEN price_per_clean > 0 OR quote_amount > 0 THEN 1 END) AS leads_quoted,
         COUNT(CASE WHEN converted=1 THEN 1 END) AS leads_closed,
         COUNT(CASE WHEN converted=1 AND LOWER(TRIM(COALESCE(frequency,''))) NOT IN
-          ('one_type','one-time','one time','','priority','move out','ttb','general') THEN 1 END) AS recurring_closed,
+          ('one_type','one-time','one time','','priority','move out','move in','pcc','ttb','general') THEN 1 END) AS recurring_closed,
         COUNT(CASE WHEN initial_clean_booked=1 THEN 1 END) AS initial_with_outcome,
         COUNT(CASE WHEN recurring_retained=1 AND (cancelled_after_initial IS NULL OR cancelled_after_initial=0) THEN 1 END) AS initial_retained
       FROM lead_records WHERE month = ?

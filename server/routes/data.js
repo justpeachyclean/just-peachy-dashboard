@@ -91,7 +91,7 @@ router.get('/summary', (req, res) => {
       COUNT(*) AS leads_in,
       COUNT(CASE WHEN price_per_clean > 0 OR quote_amount > 0 THEN 1 END) AS leads_quoted,
       COUNT(CASE WHEN converted=1 THEN 1 END) AS leads_closed,
-      COUNT(CASE WHEN converted=1 AND LOWER(TRIM(COALESCE(frequency,''))) NOT IN ('one_type','one-time','one time','','priority','move out','ttb','general') THEN 1 END) AS recurring_closed,
+      COUNT(CASE WHEN converted=1 AND LOWER(TRIM(COALESCE(frequency,''))) NOT IN ('one_type','one-time','one time','','priority','move out','move in','pcc','ttb','general') THEN 1 END) AS recurring_closed,
       COUNT(CASE WHEN initial_clean_booked=1 THEN 1 END) AS initial_cleans_booked,
       COUNT(CASE WHEN initial_clean_booked=1 AND recurring_retained IS NOT NULL THEN 1 END) AS initial_cleans_with_outcome,
       COUNT(CASE WHEN initial_clean_booked=1 AND recurring_retained=1 THEN 1 END) AS initial_to_recurring
@@ -313,7 +313,7 @@ router.get('/monthly', (req, res) => {
         COUNT(*) AS leads_in,
         COUNT(CASE WHEN price_per_clean > 0 OR quote_amount > 0 THEN 1 END) AS leads_quoted,
         COUNT(CASE WHEN converted=1 THEN 1 END) AS leads_closed,
-        COUNT(CASE WHEN converted=1 AND LOWER(TRIM(COALESCE(frequency,''))) NOT IN ('one_type','one-time','one time','','priority','move out','ttb','general') THEN 1 END) AS recurring_closed,
+        COUNT(CASE WHEN converted=1 AND LOWER(TRIM(COALESCE(frequency,''))) NOT IN ('one_type','one-time','one time','','priority','move out','move in','pcc','ttb','general') THEN 1 END) AS recurring_closed,
         COUNT(CASE WHEN initial_clean_booked=1 THEN 1 END) AS initial_cleans_booked,
         COUNT(CASE WHEN initial_clean_booked=1 AND recurring_retained=1 THEN 1 END) AS initial_to_recurring
       FROM lead_records WHERE month = ?

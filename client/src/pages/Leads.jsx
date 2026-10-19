@@ -703,7 +703,7 @@ export default function Leads() {
   const converted      = leads.filter(r => r.converted)
   const recurring      = converted.filter(r => r.recurring_retained && !r.cancelled_after_initial)
   // A lead is "quoted" only if a price was actually entered in the system
-  const quoted         = leads.filter(r => r.price_per_clean != null || r.quote_amount != null || r.initial_clean_price != null)
+  const quoted         = leads.filter(r => r.price_per_clean > 0 || r.quote_amount > 0 || r.initial_clean_price > 0)
   const initialBooked  = leads.filter(r => r.initial_clean_booked)
 
   const totalAnnual    = recurring.reduce((s, r) => s + (r.annual_value || 0), 0)

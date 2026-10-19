@@ -173,6 +173,7 @@ const BLANK_FORM = {
   used_before: '',
   reason: '',
   notes: '',
+  lead_type: '',
 }
 
 // ── CSV Import helpers ────────────────────────────────────────────────────
@@ -625,6 +626,7 @@ export default function Leads() {
       used_before:          r.used_before || '',
       reason:               r.reason || '',
       notes:                r.notes || '',
+      lead_type:            r.lead_type || '',
     })
     setShowForm(true)
   }
@@ -979,6 +981,7 @@ export default function Leads() {
                   <span className="flex items-center gap-1.5">
                     {r.client_name || <span className="text-gray-300">—</span>}
                     {r.is_current_client ? <span className="text-xs font-semibold text-sky-600 bg-sky-50 px-1.5 py-0.5 rounded-full">CC</span> : null}
+                    {r.lead_type === 'returning' ? <span className="text-xs font-semibold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded-full">Ret</span> : null}
                   </span>
                 </td>
                 <td className="py-2 px-2 text-center"><FreqBadge freq={r.frequency} /></td>
@@ -1158,6 +1161,14 @@ export default function Leads() {
                   <input type="checkbox" checked={!!form.is_current_client} onChange={set('is_current_client')} className="w-4 h-4 accent-sky-500" />
                   <span className="text-sm text-gray-700">Current Client</span>
                   <span className="text-xs text-gray-400">(excludes from bonus)</span>
+                </label>
+              </div>
+              {/* Returning Client flag */}
+              <div className="pt-1">
+                <label className="flex items-center gap-2 cursor-pointer" title="Client who was gone 6+ months and came back — counts as a new close">
+                  <input type="checkbox" checked={form.lead_type === 'returning'} onChange={e => setForm(p => ({...p, lead_type: e.target.checked ? 'returning' : ''}))} className="w-4 h-4 accent-emerald-500" />
+                  <span className="text-sm text-gray-700">Returning Client (6+ mo)</span>
+                  <span className="text-xs text-gray-400">(counts as new close)</span>
                 </label>
               </div>
               {/* Conversion checkboxes */}

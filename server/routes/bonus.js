@@ -152,13 +152,18 @@ router.patch('/records/pay', (req, res) => {
 })
 
 // GET /api/bonus/qualifying-sales?month=YYYY-MM
-// Returns all recurring leads for a month with a disqualified flag for same-month cancellations
+// Returns recurring leads for active reps for a month with a disqualified flag for one-times, cancels, etc.
 router.get('/qualifying-sales', (req, res) => {
   const now = new Date()
   const month = req.query.month || `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
   const [year, mon] = month.split('-')
   const monthStart = `${year}-${mon}-01`
   const monthEnd   = `${year}-${mon}-31`
+
+  // Only show leads for reps who are currently active
+  const activeReps = new Set(
+    db.prepare('SELECT name FROM sales_reps WHERE active = 1').all().map(r => r.name.toLowerCase().trim())
+  )
 
   const leads = db.prepare(`
     SELECT id, client_name, frequency, rep_name, record_date, initial_clean_price, price_per_clean,
@@ -186,11 +191,25 @@ router.get('/qualifying-sales', (req, res) => {
     cancelMap[key] = c.cancel_date
   }
 
-  const enriched = leads.map(l => {
-    const key = (l.client_name || '').toLowerCase().trim()
-    const cancelDate = cancelMap[key] ?? null
-    return { ...l, disqualified: !!cancelDate || !!l.is_flex || !!l.is_current_client || !!l.cancelled_after_initial, cancel_date: cancelDate }
-  })
+  const ONE_TIME_FREQS = new Set([
+    'one_time','one-time','one time','priority','move out','move in',
+    'pcc','vc','ttb','general','move out clean','move in clean',
+    'vacation clean','post construction',
+  ])
+
+  const enriched = leads
+    .filter(l => activeReps.has((l.rep_name || '').toLowerCase().trim()))
+    .map(l => {
+      const key = (l.client_name || '').toLowerCase().trim()
+      const freqKey = (l.frequency || '').toLowerCase().trim()
+      const cancelDate = cancelMap[key] ?? null
+      const isOneTime = ONE_TIME_FREQS.has(freqKey) || freqKey.startsWith('one time')
+      return {
+        ...l,
+        disqualified: isOneTime || !!cancelDate || !!l.is_flex || !!l.is_current_client || !!l.cancelled_after_initial,
+        cancel_date: cancelDate,
+      }
+    })
 
   res.json(enriched)
 })

@@ -561,6 +561,9 @@ export default function BonusTracker() {
                           <span className={`w-2 h-2 rounded-full shrink-0 ${s.disqualified ? 'bg-danger' : 'bg-ok'}`} />
                           <span className={`flex-1 font-medium ${s.disqualified ? 'line-through text-gray-400' : 'text-ink'}`}>
                             {s.client_name || 'Unknown'}
+                            {s.record_date && s.month && s.month.slice(0,7) !== month && (
+                              <span className="ml-1.5 text-xs font-normal text-gray-400" title="Lead quoted this date">quoted {s.record_date.slice(0,10)}</span>
+                            )}
                           </span>
                           <span className="text-xs text-gray-400 capitalize shrink-0">{s.frequency || '—'}</span>
                           {s.disqualified && (

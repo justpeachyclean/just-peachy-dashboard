@@ -710,8 +710,13 @@ export default function Leads() {
 
   const totalAnnual    = recurring.reduce((s, r) => s + (r.annual_value || 0), 0)
 
+  // Bonus-eligible funnel: exclude current clients and flex leads (mirrors calcBonus.js logic)
+  const bonusLeads     = leads.filter(r => !r.is_current_client && !r.is_flex)
+  const bonusQuoted    = bonusLeads.filter(r => r.price_per_clean > 0 || r.quote_amount > 0 || r.initial_clean_price > 0)
+  const bonusConverted = bonusLeads.filter(r => r.converted)
+
   const leadToQuoteRate        = leads.length > 0        ? quoted.length / leads.length        : null
-  const quoteToSaleRate        = quoted.length > 0       ? converted.length / quoted.length    : null
+  const quoteToSaleRate        = bonusQuoted.length > 0  ? bonusConverted.length / bonusQuoted.length : null
   const initialToRecurringRate = converted.length > 0 ? recurring.length / converted.length : null
 
   const monthLabel = rangeMode === 'range'
